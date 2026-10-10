@@ -1,0 +1,9 @@
+.env
+*.db
+trade_intelligence.db
+node_modules/
+__pycache__/
+ml_models/
+dist/
+.pytest_cache/
+data/
