@@ -243,6 +243,15 @@ class DemoDataProvider(BaseDataProvider):
             data_source="DEMO_SYNTHETIC"
         )
 
+    def get_all_quotes(self) -> Dict[str, Quote]:
+        """Returns map of all quotes for the NSE universe."""
+        quotes = {}
+        for sym in NSE_UNIVERSE:
+            q = self.get_quote(sym)
+            if q:
+                quotes[sym] = q
+        return quotes
+
     def get_candles(self, symbol: str, timeframe: str = "5m", count: int = 75) -> pd.DataFrame:
         if symbol not in NSE_UNIVERSE:
             return pd.DataFrame()

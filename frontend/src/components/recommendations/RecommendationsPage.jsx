@@ -4,7 +4,7 @@ import {
   Target, ArrowUpRight, ArrowDownRight, RefreshCw, Clock,
   BarChart2, AlertTriangle, ChevronRight, Activity, Send, Check, Bell,
   LogIn, LogOut, CheckCircle2, Info, BrainCircuit, RefreshCcw,
-  PackageCheck, Wallet
+  PackageCheck, Wallet, Plus, PlusCircle
 } from 'lucide-react';
 import { 
   fetchRecommendations, 
@@ -103,7 +103,7 @@ function RecommendationCard({ rec, index, liveQuote, budget = 1000, onPaperTrade
       onPaperTrade({
         symbol: rec.symbol,
         direction: rec.direction,
-        entry_price: entry,
+        entry_price: currentLtp > 0 ? currentLtp : entry,
         quantity: dynamicQty,
         product_type: 'MIS',
         stop_loss: sl,
@@ -143,15 +143,37 @@ function RecommendationCard({ rec, index, liveQuote, budget = 1000, onPaperTrade
             </div>
           </div>
 
-          {/* Live Price */}
-          <div className="text-left sm:text-right">
-            <div className="text-sm font-mono font-bold text-white">
-              Live: ₹{fmt(currentLtp)}
-              <span className={`ml-1.5 text-xs ${currentChg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                ({currentChg >= 0 ? '+' : ''}{fmt(currentChg)}%)
-              </span>
+          {/* Live Price & Quick + Button */}
+          <div className="flex items-center justify-between sm:justify-end gap-3">
+            <div className="text-left sm:text-right">
+              <div className="text-sm font-mono font-bold text-white">
+                Live: ₹{fmt(currentLtp)}
+                <span className={`ml-1.5 text-xs ${currentChg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  ({currentChg >= 0 ? '+' : ''}{fmt(currentChg)}%)
+                </span>
+              </div>
+              <div className="text-[11px] text-cyan-400 font-mono">Win Probability: {Math.round((rec.ml_probability || 0.65) * 100)}%</div>
             </div>
-            <div className="text-[11px] text-cyan-400 font-mono">Win Probability: {Math.round((rec.ml_probability || 0.65) * 100)}%</div>
+
+            {/* Quick + Add to Paper Trade Action in Header */}
+            <button
+              onClick={handleExecute}
+              disabled={isExecutingPaper || isExecutedPaper}
+              title="Add this stock to Paper Trade at current price"
+              className={`p-2 rounded-xl border flex items-center justify-center transition-all shadow-md shrink-0 ${
+                isExecutedPaper
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-600/30 active:scale-95'
+              }`}
+            >
+              {isExecutedPaper ? (
+                <Check className="w-4 h-4 text-emerald-400" />
+              ) : isExecutingPaper ? (
+                <Zap className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+              )}
+            </button>
           </div>
         </div>
 
@@ -186,21 +208,21 @@ function RecommendationCard({ rec, index, liveQuote, budget = 1000, onPaperTrade
             <button
               onClick={handleExecute}
               disabled={isExecutingPaper || isExecutedPaper}
-              className={`w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md ${
+              className={`w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md ${
                 isExecutedPaper
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/25'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/30 active:scale-95'
               }`}
             >
               {isExecutedPaper ? (
                 <>
                   <Check className="w-4 h-4 text-emerald-400" />
-                  <span>Position Active in Paper Drawer</span>
+                  <span>Position Added to Paper Portfolio</span>
                 </>
               ) : (
                 <>
-                  <Zap className={`w-4 h-4 ${isExecutingPaper ? 'animate-spin' : ''}`} />
-                  <span>{isExecutingPaper ? 'Placing...' : `🎮 Paper Trade (₹${budget.toLocaleString('en-IN')})`}</span>
+                  <PlusCircle className={`w-4 h-4 ${isExecutingPaper ? 'animate-spin' : ''}`} />
+                  <span>{isExecutingPaper ? 'Adding Position...' : `+ Add to Paper Trade (₹${budget.toLocaleString('en-IN')})`}</span>
                 </>
               )}
             </button>
@@ -243,18 +265,39 @@ function RecommendationCard({ rec, index, liveQuote, budget = 1000, onPaperTrade
             </div>
           </div>
 
-          {/* Direction + Current Price */}
-          <div className="text-right shrink-0">
-            <div className={`flex items-center justify-end gap-1 font-mono font-bold text-sm ${isLong ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {isLong ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-              {isLong ? 'BUY / LONG' : 'SELL / SHORT'}
+          {/* Direction + Current Price + Quick + Button */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="text-right">
+              <div className={`flex items-center justify-end gap-1 font-mono font-bold text-sm ${isLong ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {isLong ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                {isLong ? 'BUY / LONG' : 'SELL / SHORT'}
+              </div>
+              <div className="text-xs font-mono font-semibold text-white mt-0.5">
+                Live: ₹{fmt(currentLtp)}{' '}
+                <span className={(currentChg ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                  ({(currentChg ?? 0) >= 0 ? '+' : ''}{fmt(currentChg)}%)
+                </span>
+              </div>
             </div>
-            <div className="text-xs font-mono font-semibold text-white mt-0.5">
-              Live: ₹{fmt(currentLtp)}{' '}
-              <span className={(currentChg ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                ({(currentChg ?? 0) >= 0 ? '+' : ''}{fmt(currentChg)}%)
-              </span>
-            </div>
+
+            <button
+              onClick={handleExecute}
+              disabled={isExecutingPaper || isExecutedPaper}
+              title="Add this stock to Paper Trade at current price"
+              className={`p-2 rounded-xl border flex items-center justify-center transition-all shadow-md shrink-0 ${
+                isExecutedPaper
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-600/30 active:scale-95'
+              }`}
+            >
+              {isExecutedPaper ? (
+                <Check className="w-4 h-4 text-emerald-400" />
+              ) : isExecutingPaper ? (
+                <Zap className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+              )}
+            </button>
           </div>
         </div>
 
@@ -297,8 +340,8 @@ function RecommendationCard({ rec, index, liveQuote, budget = 1000, onPaperTrade
                   </>
                 ) : (
                   <>
-                    <Zap className={`w-3.5 h-3.5 ${isExecutingPaper ? 'animate-spin' : ''}`} />
-                    <span>🎮 Paper Trade</span>
+                    <Plus className={`w-3.5 h-3.5 stroke-[2.5] ${isExecutingPaper ? 'animate-spin' : ''}`} />
+                    <span>{isExecutingPaper ? 'Adding...' : '+ Add to Paper Trade'}</span>
                   </>
                 )}
               </button>

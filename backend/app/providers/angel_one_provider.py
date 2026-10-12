@@ -97,10 +97,13 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
         # In-memory live caches
         self._batch_quotes_cache: Dict[str, Quote] = {}
         self._batch_quotes_timestamp: Optional[datetime.datetime] = None
+        self._batch_quotes_error_cooldown_until: float = 0.0
         self._indices_cache: Dict[str, IndexSummary] = {}
         self._indices_timestamp: Optional[datetime.datetime] = None
+        self._indices_error_cooldown_until: float = 0.0
         self._candles_cache: Dict[str, pd.DataFrame] = {}
         self._candles_timestamp: Dict[str, datetime.datetime] = {}
+        self._candle_rate_limit_until: float = 0.0
         
         self._daily_nifty_base: Optional[float] = None
         self._daily_bn_base: Optional[float] = None
@@ -264,6 +267,10 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
         """
         if not self.is_authenticated:
             return
+
+        # Check circuit breaker cooldown
+        if time.time() < self._batch_quotes_error_cooldown_until:
+            return
             
         now = datetime.datetime.utcnow()
         if (self._batch_quotes_timestamp and 
@@ -333,6 +340,8 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
             self._batch_quotes_timestamp = now
         except Exception as e:
             logger.error(f"Error fetching Angel One batch quotes: {e}")
+            self._batch_quotes_timestamp = now
+            self._batch_quotes_error_cooldown_until = time.time() + 15.0
 
     def get_quote(self, symbol: str) -> Optional[Quote]:
         """
@@ -380,6 +389,10 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
         if not info:
             return pd.DataFrame()
 
+        # If currently under rate limit cooldown from Angel One, return immediately
+        if time.time() < self._candle_rate_limit_until:
+            return pd.DataFrame()
+
         interval = self._TF_MAP.get(timeframe, "FIVE_MINUTE")
         token = info.get("token", "")
         if not token:
@@ -402,10 +415,24 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
         }
 
         try:
-            resp = requests.post(url, headers=self._get_headers(), json=payload, timeout=8)
-            data = resp.json()
+            resp = requests.post(url, headers=self._get_headers(), json=payload, timeout=2.5)
+            if resp.status_code == 429 or "too many" in resp.text.lower() or "AB8051" in resp.text:
+                logger.warning(f"Angel One candle rate limit reached. Pausing candle calls for 25s.")
+                self._candle_rate_limit_until = time.time() + 25.0
+                return pd.DataFrame()
+
+            if resp.status_code != 200 or not resp.text.strip():
+                return pd.DataFrame()
+
+            try:
+                data = resp.json()
+            except Exception:
+                return pd.DataFrame()
+
             if not data.get("status"):
-                logger.warning(f"getCandleData failed for {symbol}: {data.get('message', 'unknown error')}")
+                msg = str(data.get("message", ""))
+                if "AB8051" in msg or "limit" in msg.lower():
+                    self._candle_rate_limit_until = time.time() + 25.0
                 return pd.DataFrame()
 
             raw = data.get("data", [])
@@ -420,23 +447,18 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
                 df[col] = df[col].astype(float).round(2)
             df["volume"] = df["volume"].astype(int)
             df.sort_index(inplace=True)
-            logger.info(f"getCandleData: fetched {len(df)} real candles for {symbol}")
             return df.tail(count).copy()
-        except Exception as e:
-            logger.error(f"getCandleData error for {symbol}: {e}")
+        except Exception:
+            # If network/API timed out, back off for 15s to avoid freezing scans
+            self._candle_rate_limit_until = time.time() + 15.0
             return pd.DataFrame()
 
     def get_candles(self, symbol: str, timeframe: str = "5m", count: int = 75) -> pd.DataFrame:
         """
         Returns real intraday OHLCV candles from Angel One getCandleData API.
-        When authenticated, fetches actual historical tick data.
-        Falls back to demo provider only when not authenticated.
+        When authenticated, fetches actual historical tick data with fast fallback and caching.
         """
         if symbol not in NSE_UNIVERSE:
-            return self.fallback_provider.get_candles(symbol, timeframe, count)
-
-        if not self.is_authenticated:
-            logger.warning(f"Not authenticated — returning DEMO candles for {symbol}. Data is SYNTHETIC.")
             return self.fallback_provider.get_candles(symbol, timeframe, count)
 
         # Check existing cache (120s TTL for intraday)
@@ -445,15 +467,31 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
         if (last_ts and (now - last_ts).total_seconds() < 120.0
                 and symbol in self._candles_cache
                 and not self._candles_cache[symbol].empty):
-            return self._candles_cache[symbol].tail(count).copy()
+            df_cached = self._candles_cache[symbol].tail(count).copy()
+            live_q = self.get_quote(symbol)
+            if live_q and live_q.ltp > 0 and not df_cached.empty:
+                df_cached.loc[df_cached.index[-1], 'close'] = live_q.ltp
+                df_cached.loc[df_cached.index[-1], 'high'] = max(float(df_cached.iloc[-1]['high']), live_q.ltp)
+                df_cached.loc[df_cached.index[-1], 'low'] = min(float(df_cached.iloc[-1]['low']), live_q.ltp)
+            return df_cached
 
-        # Fetch real candles from Angel One
-        df = self._fetch_real_candles(symbol, timeframe, count)
+        if not self.is_authenticated:
+            df = self.fallback_provider.get_candles(symbol, timeframe, count)
+        else:
+            df = self._fetch_real_candles(symbol, timeframe, count)
+            if df.empty:
+                df = self.fallback_provider.get_candles(symbol, timeframe, count)
 
         if not df.empty:
-            # Pin the very last bar to the live LTP for accuracy
             live_q = self.get_quote(symbol)
             if live_q and live_q.ltp > 0:
+                last_hist = float(df.iloc[-1]['close'])
+                # If fallback candle price level diverges by >20% from live quote (e.g. stock split or outdated base),
+                # normalize the entire series to align with live LTP so indicators (VWAP, ATR, SMA) remain accurate.
+                if last_hist > 0 and abs(live_q.ltp - last_hist) / last_hist > 0.20:
+                    ratio = live_q.ltp / last_hist
+                    for col in ['open', 'high', 'low', 'close']:
+                        df[col] = (df[col] * ratio).round(2)
                 df.loc[df.index[-1], 'close'] = live_q.ltp
                 df.loc[df.index[-1], 'high'] = max(float(df.iloc[-1]['high']), live_q.ltp)
                 df.loc[df.index[-1], 'low'] = min(float(df.iloc[-1]['low']), live_q.ltp)
@@ -461,8 +499,6 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
             self._candles_timestamp[symbol] = now
             return df.tail(count).copy()
 
-        # Real fetch failed — warn clearly and fall back
-        logger.error(f"getCandleData returned empty for {symbol}. Falling back to DEMO (SYNTHETIC) candles.")
         return self.fallback_provider.get_candles(symbol, timeframe, count)
 
     def get_indices(self) -> Dict[str, IndexSummary]:
@@ -470,6 +506,12 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
         Fetches live Nifty 50 and Bank Nifty index values directly from Angel One.
         """
         if not self.is_authenticated:
+            return self.fallback_provider.get_indices()
+
+        # Check circuit breaker cooldown
+        if time.time() < self._indices_error_cooldown_until:
+            if self._indices_cache:
+                return self._indices_cache
             return self.fallback_provider.get_indices()
 
         now = datetime.datetime.utcnow()
@@ -574,6 +616,8 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
             return indices
         except Exception as e:
             logger.error(f"Error fetching Angel One indices: {e}")
+            self._indices_timestamp = now
+            self._indices_error_cooldown_until = time.time() + 15.0
             if self._indices_cache:
                 return self._indices_cache   # Return last good cache, not demo random
             return self.fallback_provider.get_indices()

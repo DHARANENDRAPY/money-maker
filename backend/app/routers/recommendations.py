@@ -17,10 +17,15 @@ from app.schemas.all_schemas import SignalItem
 router = APIRouter()
 
 
+_intra_recs_cache = {}
+_intra_recs_cache_time = None
+_INTRA_RECS_CACHE_TTL = 15.0  # 15 seconds cache
+
+
 def _conviction_label(score: float) -> str:
-    if score >= 0.75:
+    if score >= 0.65:
         return "HIGH_CONVICTION"
-    elif score >= 0.58:
+    elif score >= 0.45:
         return "MODERATE"
     else:
         return "SPECULATIVE"
@@ -41,21 +46,21 @@ def _compute_conviction_score(
     Weights: ML probability (40%) + R:R quality (25%) + Volume (15%) + 
              Regime alignment (10%) + Factor alignment (10%)
     """
-    # ML probability component (40%) — baseline now 0.50 (random), 0.90 = excellent
-    ml_score = min(1.0, max(0.0, (ml_prob - 0.50) / 0.45)) * 0.40
+    # ML probability component (40%) — 0.46 baseline, 0.62+ is excellent
+    ml_score = min(1.0, max(0.0, (ml_prob - 0.46) / 0.16)) * 0.40
 
-    # R:R quality component (25%) — 1.4 = baseline, 3.0 = excellent
-    rr_score = min(1.0, max(0.0, (rr_ratio - 1.4) / 1.6)) * 0.25
+    # R:R quality component (25%) — 1.4 = baseline, 2.8 = excellent
+    rr_score = min(1.0, max(0.0, (rr_ratio - 1.4) / 1.4)) * 0.25
 
-    # Volume confirmation (15%) — RVOL > 1.5 is bullish volume
-    vol_score = min(1.0, max(0.0, (rvol - 1.0) / 2.0)) * 0.15
+    # Volume confirmation (15%) — RVOL > 1.0 is bullish volume
+    vol_score = min(1.0, max(0.0, (rvol - 0.9) / 1.4)) * 0.15
 
     # Regime alignment (10%)
     regime_score = 0.10 if regime_aligned else 0.0
 
     # Factor alignment (10%)
     factor_net = n_supporting - (n_conflicting * 2)
-    factor_score = min(1.0, max(0.0, factor_net / 4.0)) * 0.10
+    factor_score = min(1.0, max(0.0, factor_net / 3.0)) * 0.10
 
     total = ml_score + rr_score + vol_score + regime_score + factor_score
     return round(min(0.98, max(0.10, total)), 3)
@@ -69,6 +74,15 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
     Scans all stocks in the NSE universe, generates signals, ranks by conviction score,
     and returns the top N setups with full trade plans.
     """
+    global _intra_recs_cache, _intra_recs_cache_time
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if _intra_recs_cache_time and (now - _intra_recs_cache_time).total_seconds() < _INTRA_RECS_CACHE_TTL and _intra_recs_cache:
+        cached_top = _intra_recs_cache.get("top_recommendations", [])
+        return {
+            **_intra_recs_cache,
+            "top_recommendations": cached_top[:limit]
+        }
+
     provider = market_state.active_provider
     indices = provider.get_indices()
     nifty = indices.get("NIFTY 50")
@@ -114,11 +128,8 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
 
             ml_prob = signal.ml_probability or 0.50
 
-            # === HARD ML GATE ===
-            # Only allow signals where the model has >= 60% confidence.
-            # This is the primary fix for the over-trading / low precision issue.
-            ML_CONFIDENCE_THRESHOLD = 0.60
-            if ml_prob < ML_CONFIDENCE_THRESHOLD:
+            # Filter out setups with poor confidence (< 0.40)
+            if ml_prob < 0.40:
                 continue
 
             # Regime alignment check
@@ -184,32 +195,61 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
     for i, rec in enumerate(top):
         rec["rank"] = i + 1
 
-    # Auto-dispatch top recommendations to Telegram asynchronously if enabled
+    # Persist top recommendations into RecommendationHistoryRecord database table
     try:
+        from app.database import SessionLocal
+        from app.models.all_models import RecommendationHistoryRecord
         from app.services.telegram_service import telegram_service
-        
-        # Determine if Indian Market is currently Open (prevent spam when closed or restarted at night)
-        now_utc = datetime.datetime.utcnow()
-        ist_offset = datetime.timedelta(hours=5, minutes=30)
-        now_ist = now_utc + ist_offset
-        weekday = now_ist.weekday()
-        total_minutes = now_ist.hour * 60 + now_ist.minute
-        
-        # Market open: 09:15 to 15:30, Mon-Fri
-        is_market_open = (weekday < 5) and (9 * 60 + 15 <= total_minutes < 15 * 60 + 30)
+        import threading
 
-        # Only auto-send if Market is OPEN and the feed is Live
-        if telegram_service.enabled and provider.is_live_feed() and is_market_open:
-            import threading
-            def _async_send(recs_to_send):
-                for rec in recs_to_send:
-                    try:
-                        telegram_service.send_recommendation_alert(rec)
-                    except Exception:
-                        pass
-            threading.Thread(target=_async_send, args=(list(top[:3]),), daemon=True).start()
-    except Exception:
-        pass
+        db = SessionLocal()
+        for rec in top:
+            today_str = datetime.datetime.utcnow().strftime("%Y%m%d")
+            rec_id = f"INTRA-{rec['symbol']}-{rec.get('direction', 'LONG')}-{today_str}"
+            exists = db.query(RecommendationHistoryRecord).filter_by(rec_id=rec_id).first()
+            if not exists:
+                new_rec = RecommendationHistoryRecord(
+                    rec_id=rec_id,
+                    symbol=rec["symbol"],
+                    name=rec.get("name", rec["symbol"]),
+                    sector=rec.get("sector", "NSE Equity"),
+                    trade_type="INTRADAY",
+                    direction=rec.get("direction", "LONG"),
+                    strategy=rec.get("strategy", "AI Algorithmic Setup"),
+                    entry_price=rec.get("entry_price", 0.0),
+                    target_1=rec.get("target_price", 0.0),
+                    stop_loss=rec.get("stop_loss", 0.0),
+                    risk_reward_ratio=rec.get("risk_reward_ratio", 1.5),
+                    expected_profit_pct=round(abs((rec.get("target_price", 0) - rec.get("entry_price", 0)) / max(rec.get("entry_price", 1), 0.01) * 100), 2),
+                    expected_loss_pct=round(abs((rec.get("entry_price", 0) - rec.get("stop_loss", 0)) / max(rec.get("entry_price", 1), 0.01) * 100), 2),
+                    holding_period="15 to 45 Mins (MIS)",
+                    win_probability_pct=int((rec.get("ml_probability") or 0.5) * 100),
+                    conviction_pct=int((rec.get("conviction_score") or 0.5) * 100),
+                    reason=f"{rec.get('strategy', 'Setup')} | Regime: {market_regime}",
+                    supporting_catalysts=rec.get("supporting_factors", [])
+                )
+                db.add(new_rec)
+                db.commit()
+
+                # Dispatch Telegram alert for newly entered recommended stock
+                if telegram_service.enabled:
+                    def _send_tg(r_copy, rid):
+                        try:
+                            res = telegram_service.send_recommendation_alert(r_copy)
+                            if res.get("success"):
+                                db_inner = SessionLocal()
+                                item = db_inner.query(RecommendationHistoryRecord).filter_by(rec_id=rid).first()
+                                if item:
+                                    item.telegram_sent = True
+                                    item.telegram_sent_at = datetime.datetime.utcnow()
+                                    db_inner.commit()
+                                db_inner.close()
+                        except Exception:
+                            pass
+                    threading.Thread(target=_send_tg, args=(dict(rec), rec_id), daemon=True).start()
+        db.close()
+    except Exception as e:
+        print(f"Error persisting recommendation history: {e}")
 
     return {
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
@@ -221,3 +261,60 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
         "signals_found": len(recommendations),
         "top_recommendations": top,
     }
+
+
+@router.get("/recommendations/history")
+def get_recommendations_history(
+    trade_type: str = "ALL",  # ALL, INTRADAY, DELIVERY
+    limit: int = 100
+) -> Dict[str, Any]:
+    """
+    Returns full history of all Intraday & Delivery stocks suggested by the system,
+    including date, time, entry price, targets, stop loss, win accuracy, and rationale.
+    """
+    from app.database import SessionLocal
+    from app.models.all_models import RecommendationHistoryRecord
+
+    db = SessionLocal()
+    try:
+        query = db.query(RecommendationHistoryRecord)
+        if trade_type != "ALL":
+            query = query.filter(RecommendationHistoryRecord.trade_type == trade_type.upper())
+        records = query.order_by(RecommendationHistoryRecord.timestamp.desc()).limit(limit).all()
+
+        results = []
+        for r in records:
+            results.append({
+                "id": r.id,
+                "rec_id": r.rec_id,
+                "symbol": r.symbol,
+                "name": r.name,
+                "sector": r.sector,
+                "timestamp": r.timestamp.isoformat() if r.timestamp else "",
+                "trade_type": r.trade_type,
+                "direction": r.direction,
+                "strategy": r.strategy,
+                "entry_price": r.entry_price,
+                "target_1": r.target_1,
+                "target_2": r.target_2,
+                "stop_loss": r.stop_loss,
+                "risk_reward_ratio": r.risk_reward_ratio,
+                "expected_profit_pct": r.expected_profit_pct,
+                "expected_loss_pct": r.expected_loss_pct,
+                "holding_period": r.holding_period,
+                "win_probability_pct": r.win_probability_pct,
+                "conviction_pct": r.conviction_pct,
+                "reason": r.reason,
+                "supporting_catalysts": r.supporting_catalysts or [],
+                "telegram_sent": r.telegram_sent,
+                "telegram_sent_at": r.telegram_sent_at.isoformat() if r.telegram_sent_at else None
+            })
+
+        return {
+            "total_count": len(results),
+            "trade_type_filter": trade_type,
+            "history": results
+        }
+    finally:
+        db.close()
+

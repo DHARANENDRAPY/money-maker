@@ -30,6 +30,11 @@ class BaseDataProvider(ABC):
         pass
 
     @abstractmethod
+    def get_all_quotes(self) -> Dict[str, Quote]:
+        """Fetches latest quotes for all universe stocks."""
+        pass
+
+    @abstractmethod
     def get_candles(self, symbol: str, timeframe: str = "5m", count: int = 75) -> pd.DataFrame:
         """
         Fetches historical intraday candles as a pandas DataFrame:

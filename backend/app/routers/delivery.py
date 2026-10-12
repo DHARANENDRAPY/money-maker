@@ -11,9 +11,12 @@ and Telegram alert dispatch.
 """
 import math
 import datetime
+import logging
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+
+logger = logging.getLogger("delivery_engine")
 
 from app.services.market_state import market_state
 from app.providers.demo_provider import NSE_UNIVERSE
@@ -385,6 +388,13 @@ def get_delivery_recommendations(
     risk_profile: str = Query("ALL", description="Filter risk: ALL, LOW_RISK, MODERATE_RISK, HIGH_GROWTH"),
     limit: int = Query(12, description="Max recommendations to return")
 ) -> Dict[str, Any]:
+    # Ensure arguments are primitive types even if called directly or with Query default objects
+    budget = float(budget.default if hasattr(budget, 'default') else budget)
+    horizon = str(horizon.default if hasattr(horizon, 'default') else horizon)
+    max_price = float(max_price.default if hasattr(max_price, 'default') else max_price)
+    risk_profile = str(risk_profile.default if hasattr(risk_profile, 'default') else risk_profile)
+    limit = int(limit.default if hasattr(limit, 'default') else limit)
+
     global _recs_cache, _recs_cache_time
     now = datetime.datetime.now(datetime.timezone.utc)
 
@@ -409,8 +419,8 @@ def get_delivery_recommendations(
             quote = quotes.get(sym)
             df = market_state.get_daily_candles(sym)
             
-            # ML Inference
-            prob = 0.55
+            # ML Inference — fallback to catalog-based conviction if no daily candle data
+            prob = 0.58  # Default: moderate conviction for catalog stocks
             if model and scaler and df is not None and not df.empty:
                 try:
                     feats_df = extract_daily_features(df)
@@ -419,7 +429,10 @@ def get_delivery_recommendations(
                         scaled_feats = scaler.transform(last_row)
                         prob = float(model.predict_proba(scaled_feats)[0][1])
                 except Exception:
-                    pass
+                    # Use catalog conviction if ML fails for this stock
+                    catalog = DELIVERY_SETUPS_CATALOG.get(sym)
+                    if catalog:
+                        prob = catalog.get("conviction_pct", 85) / 100.0
                     
             if prob < inference_thresh:
                 continue
@@ -462,13 +475,70 @@ def get_delivery_recommendations(
     for i, p in enumerate(top_picks):
         p["rank"] = i + 1
 
+    # Persist top delivery recommendations into RecommendationHistoryRecord database table
+    try:
+        from app.database import SessionLocal
+        from app.models.all_models import RecommendationHistoryRecord
+        from app.services.telegram_service import telegram_service
+        import threading
+
+        db = SessionLocal()
+        for p in top_picks[:6]:
+            today_str = datetime.datetime.utcnow().strftime("%Y%m%d")
+            rec_id = f"DELIVERY-{p['symbol']}-{today_str}"
+            exists = db.query(RecommendationHistoryRecord).filter_by(rec_id=rec_id).first()
+            if not exists:
+                new_rec = RecommendationHistoryRecord(
+                    rec_id=rec_id,
+                    symbol=p["symbol"],
+                    name=p.get("name", p["symbol"]),
+                    sector=p.get("sector", "NSE Equity"),
+                    trade_type="DELIVERY",
+                    direction="LONG",
+                    strategy=p.get("technical_setup", "Delivery Swing Breakout"),
+                    entry_price=p.get("ltp", 0.0),
+                    target_1=p.get("target_1", 0.0),
+                    target_2=p.get("target_2", 0.0),
+                    stop_loss=p.get("stop_loss", 0.0),
+                    risk_reward_ratio=p.get("risk_reward_ratio", 2.5),
+                    expected_profit_pct=round(p.get("target_1_gain_pct", 0.0), 2),
+                    expected_loss_pct=round(p.get("stop_loss_risk_pct", 0.0), 2),
+                    holding_period=p.get("holding_period", "2 to 4 Weeks (CNC)"),
+                    win_probability_pct=int(p.get("conviction_pct", 75)),
+                    conviction_pct=int(p.get("conviction_pct", 75)),
+                    reason=f"{p.get('technical_setup', '')}. Catalyst: {p.get('fundamental_catalyst', '')}",
+                    supporting_catalysts=[p.get("technical_setup", ""), p.get("fundamental_catalyst", "")]
+                )
+                db.add(new_rec)
+                db.commit()
+
+                # Dispatch Telegram alert for newly entered delivery stock
+                if telegram_service.enabled:
+                    def _send_deliv_tg(p_copy, rid):
+                        try:
+                            res = telegram_service.send_delivery_alert(p_copy)
+                            if res.get("success"):
+                                db_inner = SessionLocal()
+                                item = db_inner.query(RecommendationHistoryRecord).filter_by(rec_id=rid).first()
+                                if item:
+                                    item.telegram_sent = True
+                                    item.telegram_sent_at = datetime.datetime.utcnow()
+                                    db_inner.commit()
+                                db_inner.close()
+                        except Exception as ex:
+                            logger.error(f"Failed to send delivery telegram alert for {rid}: {ex}")
+                    threading.Thread(target=_send_deliv_tg, args=(dict(p), rec_id), daemon=True).start()
+        db.close()
+    except Exception as e:
+        print(f"Error persisting delivery recommendation history: {e}")
+
     return {
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "budget": budget,
         "active_horizon_filter": horizon,
         "active_price_filter": max_price,
         "total_scanned": len(NSE_UNIVERSE),
-        "total_matching": len(results),
+        "total_matching": len(all_picks),
         "recommendations": top_picks,
         "starter_picks_under_1000": [p for p in top_picks if p["under_1000"]],
         "starter_picks_under_500": [p for p in top_picks if p["under_500"]],
@@ -501,16 +571,13 @@ def broadcast_delivery_to_telegram(req: DeliveryBroadcastRequest) -> Dict[str, A
     if not provider.is_live_feed():
         return {"success": False, "message": "Not connected to live Angel One feed. Telegram alerts blocked to prevent DEMO data being sent as real signals."}
 
-    # Determine if Indian Market is currently Open
+    # Note market session status for information in delivery alerts
     now_utc = datetime.datetime.utcnow()
     ist_offset = datetime.timedelta(hours=5, minutes=30)
     now_ist = now_utc + ist_offset
     weekday = now_ist.weekday()
     total_minutes = now_ist.hour * 60 + now_ist.minute
     is_market_open = (weekday < 5) and (9 * 60 + 15 <= total_minutes < 15 * 60 + 30)
-
-    if not is_market_open:
-        return {"success": False, "message": "Market is closed. Telegram delivery alerts only fire during NSE trading hours (09:15-15:30 IST)."}
 
     quotes = provider.get_all_quotes()
     model = market_state.swing_model

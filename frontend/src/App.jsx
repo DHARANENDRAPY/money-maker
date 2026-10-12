@@ -6,17 +6,10 @@ import StatusBanner from './components/layout/StatusBanner';
 import MobileNav from './components/layout/MobileNav';
 import AlertDrawer from './components/alerts/AlertDrawer';
 
-import OverviewPage from './components/overview/OverviewPage';
-import ScannerPage from './components/scanner/ScannerPage';
-import StockAnalysisPage from './components/analysis/StockAnalysisPage';
-import MarketNewsPage from './components/news/MarketNewsPage';
-import RiskAnalyticsPage from './components/risk/RiskAnalyticsPage';
-import ModelPerformancePage from './components/model/ModelPerformancePage';
-import TradeJournalPage from './components/journal/TradeJournalPage';
-import SettingsPage from './components/settings/SettingsPage';
 import RecommendationsPage from './components/recommendations/RecommendationsPage';
 import DeliveryPage from './components/delivery/DeliveryPage';
-import OptionsRadarPage from './components/options/OptionsRadarPage';
+import PaperTradingPage from './components/paper/PaperTradingPage';
+import HistoryPage from './components/history/HistoryPage';
 import PaperTradingDrawer from './components/paper/PaperTradingDrawer';
 
 class ErrorBoundary extends Component {
@@ -59,30 +52,16 @@ function DashboardContent() {
 
   const renderActivePage = () => {
     switch (activeTab) {
-      case 'overview':
-        return <OverviewPage />;
       case 'recommendations':
         return <RecommendationsPage />;
       case 'delivery':
         return <DeliveryPage />;
-      case 'options':
-        return <OptionsRadarPage />;
-      case 'scanner':
-        return <ScannerPage />;
-      case 'analysis':
-        return <StockAnalysisPage />;
-      case 'news':
-        return <MarketNewsPage />;
-      case 'risk':
-        return <RiskAnalyticsPage />;
-      case 'model':
-        return <ModelPerformancePage />;
-      case 'journal':
-        return <TradeJournalPage />;
-      case 'settings':
-        return <SettingsPage />;
+      case 'paper':
+        return <PaperTradingPage />;
+      case 'history':
+        return <HistoryPage />;
       default:
-        return <OverviewPage />;
+        return <RecommendationsPage />;
     }
   };
 

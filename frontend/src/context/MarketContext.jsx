@@ -71,10 +71,10 @@ export const MarketProvider = ({ children }) => {
     }
   }, []);
 
-  const showToast = (message, type = 'info') => {
+  const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
     setTimeout(() => setToast(null), 4000);
-  };
+  }, []);
 
   const refreshOverview = useCallback(async () => {
     try {
@@ -170,6 +170,10 @@ export const MarketProvider = ({ children }) => {
         };
         ws.onerror = () => {
           setIsLiveWsConnected(false);
+          // onerror is followed by onclose, but schedule reconnect defensively
+          if (!reconnectTimeout) {
+            reconnectTimeout = setTimeout(connectWs, 4000);
+          }
         };
       } catch (err) {
         reconnectTimeout = setTimeout(connectWs, 4000);

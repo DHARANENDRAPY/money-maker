@@ -128,3 +128,37 @@ class ModelMetadataRecord(Base):
     calibration_curve_data = Column(JSON, default=dict)
     regime_breakdown = Column(JSON, default=dict)
     is_active = Column(Boolean, default=False)
+
+
+class RecommendationHistoryRecord(Base):
+    __tablename__ = "recommendation_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    rec_id = Column(String(64), unique=True, index=True)
+    symbol = Column(String(32), index=True)
+    name = Column(String(128), nullable=True)
+    sector = Column(String(64), nullable=True)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    
+    trade_type = Column(String(32), index=True)  # "INTRADAY" or "DELIVERY"
+    direction = Column(String(16), default="LONG")  # "LONG" or "SHORT"
+    strategy = Column(String(64), nullable=True)
+    
+    entry_price = Column(Float)
+    target_1 = Column(Float)
+    target_2 = Column(Float, nullable=True)
+    stop_loss = Column(Float)
+    risk_reward_ratio = Column(Float, default=1.5)
+    
+    expected_profit_pct = Column(Float, default=0.0)
+    expected_loss_pct = Column(Float, default=0.0)
+    
+    holding_period = Column(String(64), default="15-45 Mins")  # e.g. "15-45 Mins" or "2-4 Weeks"
+    win_probability_pct = Column(Integer, default=60)
+    conviction_pct = Column(Integer, default=70)
+    
+    reason = Column(Text, nullable=True)
+    supporting_catalysts = Column(JSON, default=list)
+    telegram_sent = Column(Boolean, default=False)
+    telegram_sent_at = Column(DateTime, nullable=True)
+

@@ -1,31 +1,18 @@
 import { 
-  LayoutDashboard, 
-  ScanSearch, 
-  LineChart, 
-  Newspaper, 
-  ShieldAlert, 
-  Cpu, 
-  Settings as SettingsIcon,
-  BookOpen,
-  TrendingUp,
-  Radio,
-  Sparkles,
   Target,
   PackageCheck,
-  Flame,
-  Wallet
+  Wallet,
+  History,
+  TrendingUp,
+  ShieldAlert
 } from 'lucide-react';
 import { useMarket } from '../../context/MarketContext';
 
 const navItems = [
-  { id: 'recommendations', label: 'Intraday AI Picks', icon: Target, badge: '🔥 MIS' },
-  { id: 'delivery', label: 'Delivery & Swing Picks', icon: PackageCheck, badge: '💎 CNC' },
-  { id: 'options', label: 'Options & F&O Radar', icon: Flame, badge: '🎯 F&O' },
-  { id: 'overview', label: 'Market Overview', icon: LayoutDashboard },
-  { id: 'scanner', label: 'Stock Scanner', icon: ScanSearch, badge: 'Live' },
-  { id: 'analysis', label: 'Stock Analysis', icon: LineChart },
-  { id: 'news', label: 'Market News', icon: Newspaper },
-  { id: 'settings', label: 'Settings & Alerts', icon: SettingsIcon },
+  { id: 'recommendations', label: 'Intraday Picks', icon: Target, badge: '⚡ MIS' },
+  { id: 'delivery', label: 'Delivery & Swing', icon: PackageCheck, badge: '💎 CNC' },
+  { id: 'paper', label: 'Paper Trading', icon: Wallet, badge: '🎮 Live' },
+  { id: 'history', label: 'All Recommendations', icon: History, badge: '📜 Vault' },
 ];
 
 export default function Sidebar() {
@@ -111,24 +98,6 @@ export default function Sidebar() {
             <span className={`font-mono text-[11px] font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
               {isProfit ? '+' : ''}₹{Math.round(pnl)}
             </span>
-          </button>
-        </div>
-
-        {/* Optional Calculator Link */}
-        <div className="px-3 pb-1">
-          <button
-            onClick={() => setActiveTab('risk')}
-            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] transition-colors ${
-              activeTab === 'risk'
-                ? 'bg-slate-800 text-cyan-400 font-semibold'
-                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/40'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>Risk & Charges Calc</span>
-            </span>
-            <span className="text-[10px] text-slate-600 font-mono">Tools</span>
           </button>
         </div>
 

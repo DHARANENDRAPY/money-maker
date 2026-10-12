@@ -3,7 +3,7 @@ import {
   PackageCheck, TrendingUp, Sparkles, Target, ArrowUpRight,
   ShieldAlert, RefreshCw, Send, CheckCircle2, Clock, Calendar,
   Wallet, DollarSign, Award, Layers, HelpCircle, ChevronRight,
-  Info, Check, Zap, Filter, Star, BarChart3, AlertCircle
+  Info, Check, Zap, Filter, Star, BarChart3, AlertCircle, Plus, PlusCircle
 } from 'lucide-react';
 import { 
   fetchDeliveryRecommendations, 
@@ -42,7 +42,8 @@ export default function DeliveryPage() {
   const [customBudgetInput, setCustomBudgetInput] = useState('');
   const [activeHorizon, setActiveHorizon] = useState('ALL');
   const [activePriceFilter, setActivePriceFilter] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [data, setData] = useState(null);
   const [telegramStatus, setTelegramStatus] = useState(null);
   const [broadcasting, setBroadcasting] = useState(false);
@@ -50,9 +51,9 @@ export default function DeliveryPage() {
   const [paperBuying, setPaperBuying] = useState({});
   const [paperBought, setPaperBought] = useState({});
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent) setIsRefreshing(true);
       const res = await fetchDeliveryRecommendations({
         budget,
         horizon: activeHorizon,
@@ -61,15 +62,19 @@ export default function DeliveryPage() {
       });
       setData(res);
     } catch (err) {
-      showToast(err.message || 'Failed to load delivery recommendations');
+      console.warn('Delivery fetch error:', err);
     } finally {
-      setLoading(false);
+      setIsInitialLoading(false);
+      setIsRefreshing(false);
     }
-  }, [budget, activeHorizon, activePriceFilter, showToast]);
+  }, [budget, activeHorizon, activePriceFilter]);
 
   useEffect(() => {
-    loadData();
+    loadData(false);
     fetchTelegramStatus().then(setTelegramStatus).catch(() => {});
+    // Steady background refresh every 30s without clearing the screen
+    const interval = setInterval(() => loadData(true), 30000);
+    return () => clearInterval(interval);
   }, [loadData]);
 
   const handleApplyCustomBudget = (e) => {
@@ -92,7 +97,7 @@ export default function DeliveryPage() {
       if (res.success) {
         showToast(`✅ ${res.message || 'Broadcasted Delivery Picks to Telegram!'}`);
       } else {
-        showToast('❌ Telegram delivery alert failed.');
+        showToast(`❌ ${res.message || res.error || 'Telegram delivery alert failed.'}`, 'error');
       }
     } catch (err) {
       showToast(`Error: ${err.message}`);
@@ -129,12 +134,14 @@ export default function DeliveryPage() {
       const payload = {
         symbol: pick.symbol,
         direction: 'LONG',
+        trade_type: 'DELIVERY',
+        product_type: 'CNC',
         entry_price: pick.entry_price || pick.ltp,
         quantity: pick.suggested_shares || 1,
-        product_type: 'CNC',
         stop_loss: pick.stop_loss,
         target_1: pick.target_1,
         target_2: pick.target_2,
+        budget: budget,
         source: 'DELIVERY_PICK'
       };
       const res = await placePaperTrade(payload);
@@ -182,11 +189,11 @@ export default function DeliveryPage() {
           {/* Quick Actions */}
           <div className="flex items-center gap-2.5">
             <button
-              onClick={loadData}
-              disabled={loading}
+              onClick={() => loadData(false)}
+              disabled={isRefreshing}
               className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition-all"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-indigo-400' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-400' : ''}`} />
               <span>Refresh</span>
             </button>
 
@@ -301,7 +308,7 @@ export default function DeliveryPage() {
       </div>
 
       {/* DELIVERY PICKS LIST */}
-      {loading ? (
+      {isInitialLoading && !data ? (
         <div className="flex flex-col items-center justify-center py-20 space-y-3">
           <RefreshCw className="w-8 h-8 text-indigo-400 animate-spin" />
           <p className="text-xs text-slate-400 font-mono">Scanning 40+ NSE stocks for high-probability delivery setups...</p>
@@ -356,18 +363,39 @@ export default function DeliveryPage() {
                       </div>
                     </div>
 
-                    {/* Price & Rating */}
-                    <div className="text-right shrink-0">
-                      <div className="text-sm font-mono font-bold text-white">
-                        ₹{liveLtp.toFixed(2)}{' '}
-                        <span className={`text-xs ${liveChg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          ({liveChg >= 0 ? '+' : ''}{liveChg.toFixed(2)}%)
-                        </span>
+                    {/* Price & Rating & Quick + Action */}
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <div className="text-right">
+                        <div className="text-sm font-mono font-bold text-white">
+                          ₹{liveLtp.toFixed(2)}{' '}
+                          <span className={`text-xs ${liveChg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            ({liveChg >= 0 ? '+' : ''}{liveChg.toFixed(2)}%)
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-end gap-1 text-amber-400 text-xs mt-1">
+                          {'★'.repeat(pick.stars)}
+                          <span className="text-[10.5px] font-mono text-slate-400 ml-1">({pick.conviction_pct}%)</span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-end gap-1 text-amber-400 text-xs mt-1">
-                        {'★'.repeat(pick.stars)}
-                        <span className="text-[10.5px] font-mono text-slate-400 ml-1">({pick.conviction_pct}%)</span>
-                      </div>
+
+                      <button
+                        onClick={() => handlePaperTrade(pick)}
+                        disabled={paperBuying[pick.symbol] || paperBought[pick.symbol]}
+                        title="Add this delivery stock to Paper Trade at current price"
+                        className={`p-2 rounded-xl border flex items-center justify-center transition-all shadow-md shrink-0 ${
+                          paperBought[pick.symbol]
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-600/30 active:scale-95'
+                        }`}
+                      >
+                        {paperBought[pick.symbol] ? (
+                          <Check className="w-4 h-4 text-emerald-400" />
+                        ) : paperBuying[pick.symbol] ? (
+                          <Zap className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Plus className="w-4 h-4 stroke-[2.5]" />
+                        )}
+                      </button>
                     </div>
                   </div>
 
@@ -491,8 +519,8 @@ export default function DeliveryPage() {
                           </>
                         ) : (
                           <>
-                            <Zap className={`w-3.5 h-3.5 ${paperBuying[pick.symbol] ? 'animate-spin' : ''}`} />
-                            <span>🎮 Paper Buy (CNC)</span>
+                            <Plus className={`w-3.5 h-3.5 stroke-[2.5] ${paperBuying[pick.symbol] ? 'animate-spin' : ''}`} />
+                            <span>{paperBuying[pick.symbol] ? 'Adding...' : '+ Add to Paper Trade'}</span>
                           </>
                         )}
                       </button>

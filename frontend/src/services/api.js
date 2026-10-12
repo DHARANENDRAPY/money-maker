@@ -241,20 +241,17 @@ export async function resetPaperPortfolio(initialCash = 10000) {
   return res.json();
 }
 
-// --- Options & F&O Radar APIs ---
-export async function fetchOptionsRadar(budget = 1000) {
-  const res = await fetch(`${BASE_URL}/options/radar?budget=${budget}`);
-  if (!res.ok) throw new Error(`Options radar fetch failed: ${res.statusText}`);
+// --- Recommendations History API ---
+export async function fetchRecommendationsHistory(tradeType = 'ALL', limit = 100) {
+  const res = await fetch(`${BASE_URL}/recommendations/history?trade_type=${tradeType}&limit=${limit}`);
+  if (!res.ok) throw new Error(`History fetch failed: ${res.statusText}`);
   return res.json();
 }
 
-export async function broadcastOptionsToTelegram(payload = {}) {
-  const res = await fetch(`${BASE_URL}/options/broadcast-telegram`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error(`Options broadcast failed: ${res.statusText}`);
+// --- Paper Trading History API ---
+export async function fetchPaperTradingHistory(limit = 100) {
+  const res = await fetch(`${BASE_URL}/paper/history?limit=${limit}`);
+  if (!res.ok) throw new Error(`Paper history fetch failed: ${res.statusText}`);
   return res.json();
 }
 

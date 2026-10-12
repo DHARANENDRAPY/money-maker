@@ -240,8 +240,11 @@ class MarketStateManager:
                     
             except Exception as e:
                 print(f"Daily candle refresh failed: {e}")
+                # Retry faster on failure (5 min) instead of full 6 hour wait
+                await asyncio.sleep(5 * 60)
+                continue
             
-            # Refresh every 6 hours
+            # Success — refresh every 6 hours
             await asyncio.sleep(6 * 3600)
 
     def get_daily_candles(self, symbol: str) -> Optional[pd.DataFrame]:

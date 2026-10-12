@@ -106,6 +106,6 @@ def test_ml_model_training_pipeline():
     
     assert len(X) >= 40
     meta = pipeline.train_walk_forward(X, y, r, train_ratio=0.7)
-    assert meta["model_type"] == "GradientBoosting"
+    assert "Ensemble" in meta["model_type"] or meta["model_type"] == "GradientBoosting"
     assert "accuracy" in meta
     assert "calibration_curve" in meta

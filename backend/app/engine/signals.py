@@ -130,6 +130,40 @@ class SignalGenerator:
                 target = round(vwap - (0.5 * atr), 2)
                 supporting_factors.extend(["Oversold RSI < 26", "Extended 2.5x ATR from VWAP"])
 
+        # Setup 9: RSI Momentum Thrust (broad sideways/moderate trend catcher)
+        elif rsi > 58 and rsi < 72 and ema9 > ema21 and current_price > vwap and rvol > 0.8:
+            strategy = "RSI Momentum Thrust"
+            direction = "LONG"
+            entry = round(current_price, 2)
+            stop_loss = round(min(vwap, ema21) - (0.5 * atr), 2)
+            target = round(entry + (1.8 * abs(entry - stop_loss)), 2)
+            supporting_factors.extend(["RSI Bullish Zone 58-72", "Above VWAP", "EMA Uptrend"])
+
+        elif rsi < 42 and rsi > 28 and ema9 < ema21 and current_price < vwap and rvol > 0.8:
+            strategy = "RSI Momentum Thrust"
+            direction = "SHORT"
+            entry = round(current_price, 2)
+            stop_loss = round(max(vwap, ema21) + (0.5 * atr), 2)
+            target = round(entry - (1.8 * abs(entry - stop_loss)), 2)
+            supporting_factors.extend(["RSI Bearish Zone 28-42", "Below VWAP", "EMA Downtrend"])
+
+        # Setup 10: Bollinger Band Squeeze Breakout
+        elif (current_price > bb_upper and ema9 > ema21 and rvol > 1.1 and rsi > 55):
+            strategy = "BB Squeeze Breakout Long"
+            direction = "LONG"
+            entry = round(current_price, 2)
+            stop_loss = round(bb_upper - (0.5 * atr), 2) if bb_upper < current_price else round(current_price - (1.0 * atr), 2)
+            target = round(entry + (2.0 * abs(entry - stop_loss)), 2)
+            supporting_factors.extend(["Bollinger Upper Band Breakout", "RVOL Surge", "RSI Bullish"])
+
+        elif (current_price < bb_lower and ema9 < ema21 and rvol > 1.1 and rsi < 45):
+            strategy = "BB Squeeze Breakdown Short"
+            direction = "SHORT"
+            entry = round(current_price, 2)
+            stop_loss = round(bb_lower + (0.5 * atr), 2) if bb_lower > current_price else round(current_price + (1.0 * atr), 2)
+            target = round(entry - (2.0 * abs(entry - stop_loss)), 2)
+            supporting_factors.extend(["Bollinger Lower Band Breakdown", "RVOL Surge", "RSI Bearish"])
+
         # Setup 6: EMA Trend Momentum (fires when ema9 crosses ema21 with MACD confirmation)
         elif (ema9 > ema21 and macd_hist > 0 and macd_hist > macd_hist_prev and
               rsi > 50 and rsi < 70 and current_price > vwap and rvol > 1.0):
@@ -198,7 +232,7 @@ class SignalGenerator:
             return None
             
         rr_ratio = reward / risk
-        if rr_ratio < 1.4:
+        if rr_ratio < 1.2:
             # Poor risk-reward => enforce No Trade
             return None
             

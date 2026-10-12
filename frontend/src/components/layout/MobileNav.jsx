@@ -1,12 +1,12 @@
 import React from 'react';
 import { useMarket } from '../../context/MarketContext';
-import { LayoutDashboard, Target, PackageCheck, Flame, Menu } from 'lucide-react';
+import { Target, PackageCheck, Wallet, History } from 'lucide-react';
 
 const mobileNavItems = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'recommendations', label: 'Intraday', icon: Target },
-  { id: 'delivery', label: 'Swing', icon: PackageCheck },
-  { id: 'options', label: 'Options', icon: Flame },
+  { id: 'delivery', label: 'Delivery', icon: PackageCheck },
+  { id: 'paper', label: 'Paper', icon: Wallet },
+  { id: 'history', label: 'History', icon: History },
 ];
 
 export default function MobileNav() {
@@ -23,7 +23,7 @@ export default function MobileNav() {
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${
-                isActive ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-200'
+                isActive ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <Icon className="w-5 h-5" />
@@ -31,16 +31,6 @@ export default function MobileNav() {
             </button>
           );
         })}
-        {/* Settings / More button */}
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${
-            activeTab === 'settings' ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Menu className="w-5 h-5" />
-          <span className="text-[10px] font-medium">Menu</span>
-        </button>
       </div>
     </div>
   );

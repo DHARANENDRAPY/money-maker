@@ -24,14 +24,17 @@ router = APIRouter(prefix="/paper", tags=["Paper Trading Simulator"])
 class PlacePaperTradeRequest(BaseModel):
     symbol: str
     direction: str = "LONG"  # LONG or SHORT
-    trade_type: str = "INTRADAY"  # INTRADAY or DELIVERY
+    trade_type: Optional[str] = None  # INTRADAY or DELIVERY
+    product_type: Optional[str] = None  # MIS or CNC
     entry_price: float
     target_1: float
     target_2: Optional[float] = None
     stop_loss: float
     budget: float = 1000.0  # User's allocated budget in INR
     shares: Optional[int] = None
+    quantity: Optional[int] = None  # alias for shares
     strategy: Optional[str] = "AI Setup"
+    source: Optional[str] = None
 
 
 # In-memory paper trading portfolio store (persists during backend session)
@@ -78,14 +81,16 @@ class PaperPortfolioStore:
                 if r.exit_time:
                     # Closed trade
                     pos["exit_price"] = r.actual_exit or r.planned_entry
-                    pos["exit_time"] = r.exit_time.isoformat() + "Z"
+                    pos["exit_time"] = r.exit_time.isoformat() + "Z" if r.exit_time else ""
                     pos["exit_reason"] = r.notes or "MANUAL_EXIT"
-                    pos["realized_pnl"] = r.net_pnl
+                    pos["gross_pnl"] = r.gross_pnl or 0.0
+                    pos["charges"] = r.total_charges or 0.0
+                    pos["realized_pnl"] = r.net_pnl or 0.0
                     if pos["entry_price"] > 0 and pos["shares"] > 0:
-                        pos["realized_pnl_pct"] = round((r.net_pnl / (pos["entry_price"] * pos["shares"])) * 100.0, 2)
+                        pos["realized_pnl_pct"] = round(((r.net_pnl or 0.0) / (pos["entry_price"] * pos["shares"])) * 100.0, 2)
                     else:
                         pos["realized_pnl_pct"] = 0.0
-                    pos["is_win"] = r.net_pnl > 0
+                    pos["is_win"] = (r.net_pnl or 0.0) > 0
                     self.closed_trades.append(pos)
                 else:
                     # Open position
@@ -154,20 +159,30 @@ class PaperPortfolioStore:
 
             # Check Auto-Exit Triggers
             auto_exit_reason = None
-            if is_long:
-                if curr_price >= t1 and not pos.get("t1_booked"):
-                    # Partial profit or full exit
-                    auto_exit_reason = "TARGET_1_HIT"
-                elif curr_price <= sl:
-                    auto_exit_reason = "STOP_LOSS_HIT"
-            else:
-                if curr_price <= t1 and not pos.get("t1_booked"):
-                    auto_exit_reason = "TARGET_1_HIT"
-                elif curr_price >= sl:
-                    auto_exit_reason = "STOP_LOSS_HIT"
+
+            # 1. Indian Stock Exchange 15:15 IST Intraday Auto-Square-Off (MIS rule)
+            if pos.get("trade_type") == "INTRADAY":
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
+                # Auto square off intraday after 15:15 IST (3:15 PM) on weekdays
+                if now_ist.weekday() < 5 and (now_ist.hour > 15 or (now_ist.hour == 15 and now_ist.minute >= 15)):
+                    auto_exit_reason = "INTRADAY_MARKET_CLOSE_SQUAREOFF"
+
+            # 2. Target 1 & Stop Loss Price Triggers
+            if not auto_exit_reason:
+                if is_long:
+                    if curr_price >= t1 and not pos.get("t1_booked"):
+                        auto_exit_reason = "TARGET_1_HIT"
+                    elif curr_price <= sl:
+                        auto_exit_reason = "STOP_LOSS_HIT"
+                else:
+                    if curr_price <= t1 and not pos.get("t1_booked"):
+                        auto_exit_reason = "TARGET_1_HIT"
+                    elif curr_price >= sl:
+                        auto_exit_reason = "STOP_LOSS_HIT"
 
             if auto_exit_reason:
-                # Close trade automatically
+                # Close trade automatically at current live market price
                 closed = self._close_position_internal(pos_id, curr_price, auto_exit_reason)
                 continue
 
@@ -292,16 +307,28 @@ def place_paper_trade(req: PlacePaperTradeRequest) -> Dict[str, Any]:
     """
     Executes a simulated paper order with custom capital budget (default ₹1,000).
     """
-    entry = req.entry_price
+    # Use live quote LTP if live feed is available, ensuring realistic execution at current price
+    provider = market_state.active_provider
+    live_quote = provider.get_quote(req.symbol)
+    if live_quote and live_quote.ltp > 0:
+        entry = live_quote.ltp
+    else:
+        entry = req.entry_price
+
     if entry <= 0:
         raise HTTPException(status_code=400, detail="Invalid entry price")
 
-    is_intraday = req.trade_type.upper() == "INTRADAY"
-    # MIS margin is 5x (20% margin required). Delivery is 1x (100% cash).
-    margin_mult = 5.0 if is_intraday else 1.0
+    # Determine trade type: CNC / DELIVERY = 1x cash (NO LEVERAGE), MIS / INTRADAY = 5x leverage
+    req_type = (req.trade_type or req.product_type or "INTRADAY").upper()
+    is_delivery = ("DELIVERY" in req_type) or ("CNC" in req_type)
+    normalized_trade_type = "DELIVERY" if is_delivery else "INTRADAY"
 
-    if req.shares and req.shares > 0:
-        shares = req.shares
+    # Only intraday gets 5x leverage (20% margin). Delivery requires 100% full cash (1x, NO LEVERAGE).
+    margin_mult = 1.0 if is_delivery else 5.0
+
+    qty_val = req.shares or req.quantity
+    if qty_val and qty_val > 0:
+        shares = qty_val
     else:
         # Sizing according to user's budget
         buying_power = req.budget * margin_mult
@@ -312,7 +339,7 @@ def place_paper_trade(req: PlacePaperTradeRequest) -> Dict[str, Any]:
     if margin_required > portfolio.available_cash:
         raise HTTPException(
             status_code=400,
-            detail=f"Insufficient virtual cash. Required margin: ₹{margin_required:,.2f}, Available: ₹{portfolio.available_cash:,.2f}"
+            detail=f"Insufficient virtual cash. Required cash/margin: ₹{margin_required:,.2f}, Available: ₹{portfolio.available_cash:,.2f}"
         )
 
     # Deduct margin
@@ -331,8 +358,8 @@ def place_paper_trade(req: PlacePaperTradeRequest) -> Dict[str, Any]:
             actual_stop_loss=round(req.stop_loss, 2),
             planned_target=round(req.target_1, 2),
             quantity=shares,
-            setup_strategy=req.strategy or "AI Algorithmic Setup",
-            tags=[req.trade_type.upper()],
+            setup_strategy=req.strategy or ("AI Delivery Setup" if is_delivery else "AI Intraday Setup"),
+            tags=[normalized_trade_type],
             notes="OPEN"
         )
         db.add(r)
@@ -348,8 +375,8 @@ def place_paper_trade(req: PlacePaperTradeRequest) -> Dict[str, Any]:
         "position_id": pos_id_str,
         "symbol": req.symbol,
         "direction": req.direction.upper(),
-        "trade_type": req.trade_type.upper(),
-        "strategy": req.strategy or "AI Algorithmic Setup",
+        "trade_type": normalized_trade_type,
+        "strategy": req.strategy or ("AI Delivery Setup" if is_delivery else "AI Intraday Setup"),
         "entry_price": round(entry, 2),
         "shares": shares,
         "margin_used": margin_required,
@@ -403,3 +430,51 @@ def reset_paper_portfolio(initial_cash: float = Query(10000.0, description="Star
         "message": f"Paper portfolio reset to ₹{initial_cash:,.2f} virtual cash.",
         "portfolio": portfolio.get_summary()
     }
+
+
+@router.get("/history")
+def get_paper_trading_history(limit: int = 100) -> Dict[str, Any]:
+    """
+    Returns the complete persistent history of all paper trades from the SQLite database,
+    including exact timestamps for when bought and when sold, entry and exit prices,
+    brokerage/statutory fees, and realized profit or loss.
+    """
+    db = SessionLocal()
+    try:
+        records = db.query(TradeJournalRecord).order_by(TradeJournalRecord.entry_time.desc()).limit(limit).all()
+        history = []
+        for r in records:
+            history.append({
+                "id": r.id,
+                "symbol": r.symbol,
+                "direction": r.direction,
+                "trade_type": r.tags[0] if r.tags and len(r.tags) > 0 else "INTRADAY",
+                "strategy": r.setup_strategy or "AI Algorithmic Setup",
+                "shares": r.quantity,
+                "bought_at_price": r.actual_entry or r.planned_entry,
+                "bought_at_time": r.entry_time.isoformat() + "Z" if r.entry_time else None,
+                "sold_at_price": r.actual_exit,
+                "sold_at_time": r.exit_time.isoformat() + "Z" if r.exit_time else None,
+                "status": "CLOSED" if r.exit_time else "OPEN",
+                "exit_reason": r.notes if r.exit_time else "POSITION_OPEN",
+                "planned_target": r.planned_target,
+                "planned_stop_loss": r.planned_stop_loss,
+                "gross_pnl": r.gross_pnl or 0.0,
+                "charges": r.total_charges or 0.0,
+                "net_pnl": r.net_pnl or 0.0,
+                "is_win": (r.net_pnl or 0.0) > 0 if r.exit_time else None
+            })
+
+        total_closed = [h for h in history if h["status"] == "CLOSED"]
+        wins = [h for h in total_closed if h["is_win"]]
+        win_rate = round((len(wins) / len(total_closed) * 100.0), 1) if total_closed else 0.0
+
+        return {
+            "total_count": len(history),
+            "open_count": len([h for h in history if h["status"] == "OPEN"]),
+            "closed_count": len(total_closed),
+            "win_rate": win_rate,
+            "history": history
+        }
+    finally:
+        db.close()

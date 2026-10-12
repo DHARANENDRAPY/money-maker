@@ -1,4 +1,6 @@
 import logging
+import datetime
+import html
 import requests
 from typing import Dict, Any, Optional
 from app.config import settings
@@ -78,6 +80,7 @@ class TelegramService:
             return {"success": False, "error": "Telegram alerts disabled or not configured."}
 
         import html
+        import datetime
         symbol = html.escape(str(rec.get("symbol", "N/A")))
         direction = rec.get("direction", "LONG")
         dir_emoji = "🟢 <b>BUY / LONG</b>" if direction == "LONG" else "🔴 <b>SELL / SHORT</b>"
@@ -88,24 +91,37 @@ class TelegramService:
         rr = rec.get("risk_reward_ratio", 0.0)
         ml_prob = int((rec.get("ml_probability") or 0.5) * 100)
         conviction = int((rec.get("conviction_score") or 0.5) * 100)
+        profit_pct = abs((target - entry) / entry * 100.0) if entry > 0 else 0.0
+        loss_pct = abs((entry - sl) / entry * 100.0) if entry > 0 else 0.0
         regime = html.escape(str(rec.get("market_regime", "MODERATE_BULLISH")).replace("_", " "))
         factors = rec.get("supporting_factors", [])
         factors_str = "\n".join([f"  • {html.escape(str(f))}" for f in factors[:3]]) if factors else "  • Multi-factor technical confluence"
 
+        # Calculate exact decision time in IST
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
+        ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
+        decision_time_str = ist_now.strftime("%d %b %Y, %I:%M:%S %p IST")
+
         msg = (
-            f"⚡ <b>NEW AI INTRADAY PICK: #{symbol}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ <b>NEW AI RECOMMENDATION: #{symbol}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🕐 <b>AI Decision Time:</b> <code>{decision_time_str}</code>\n"
+            f"📋 <b>Trade Type:</b> <code>INTRADAY / MIS (Same-Day)</code>\n"
             f"<b>Action:</b> {dir_emoji}\n"
-            f"<b>Strategy:</b> <code>{strategy}</code>\n\n"
-            f"🎯 <b>Entry:</b> ₹{entry:,.2f}\n"
-            f"🎯 <b>Target:</b> ₹{target:,.2f}\n"
-            f"🛑 <b>Stop Loss:</b> ₹{sl:,.2f}\n"
-            f"⚖️ <b>Risk/Reward:</b> 1:{rr:.1f}\n\n"
-            f"🤖 <b>AI Win Probability:</b> <code>{ml_prob}%</code>\n"
-            f"⭐ <b>Conviction Score:</b> <code>{conviction}%</code>\n"
-            f"🌐 <b>Market Regime:</b> {regime}\n\n"
-            f"<b>Key Catalysts:</b>\n{factors_str}\n"
-            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"⏳ <b>Hold Duration:</b> <code>15 to 45 Minutes</code>\n"
+            f"🎯 <b>Accuracy / Win Prob:</b> <code>{ml_prob}%</code> (Conviction: {conviction}%)\n\n"
+            f"<b>WHEN TO ENTER:</b>\n"
+            f"  • Entry Price: <b>₹{entry:,.2f}</b>\n\n"
+            f"<b>WHEN TO EXIT:</b>\n"
+            f"  • 🎯 Target: <b>₹{target:,.2f}</b> (+{profit_pct:.1f}% Expected Profit)\n"
+            f"  • 🛑 Stop Loss: <b>₹{sl:,.2f}</b> (-{loss_pct:.1f}% Max Risk)\n"
+            f"  • ⚖️ Risk/Reward: 1:{rr:.1f}\n"
+            f"  • ⚠️ Time Exit: Close position before 15:15 IST. Do NOT hold overnight.\n\n"
+            f"💡 <b>Reason / Strategy:</b>\n"
+            f"  • Setup: <code>{strategy}</code>\n"
+            f"  • Market Context: {regime}\n"
+            f"{factors_str}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
             f"<i>Analysis-only. Verify in broker terminal before trading.</i>"
         )
 
@@ -143,27 +159,34 @@ class TelegramService:
         prof_1k = pick.get("profit_t1_for_1k", 0.0)
         loss_1k = pick.get("loss_for_1k", 0.0)
 
+        # Calculate exact decision time in IST
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
+        ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
+        decision_time_str = ist_now.strftime("%d %b %Y, %I:%M:%S %p IST")
+
         msg = (
-            f"💎 <b>AI DELIVERY & SWING PICK: #{symbol}</b>\n"
+            f"💎 <b>NEW AI RECOMMENDATION: #{symbol}</b>\n"
             f"<b>{name}</b> ({sector})\n"
-            f"━━━━━━━━━━━━━━━━━━━\n"
-            f"⭐ <b>Rating:</b> {stars} ({pick.get('conviction_pct', 85)}% Conviction)\n"
-            f"⏳ <b>Holding Period:</b> <code>{horizon}</code>\n"
-            f"📊 <b>Current Price:</b> ₹{ltp:,.2f}\n\n"
-            f"🛒 <b>BUY ZONE:</b> ₹{buy_min:,.2f} – ₹{buy_max:,.2f}\n\n"
-            f"🎯 <b>Target 1 (Swing):</b> ₹{t1:,.2f} (<b>+{t1_gain:.1f}%</b>)\n"
-            f"🚀 <b>Target 2 (Positional):</b> ₹{t2:,.2f} (<b>+{t2_gain:.1f}%</b>)\n"
-            f"🛑 <b>Stop Loss:</b> ₹{sl:,.2f} (<b>-{sl_risk:.1f}%</b>)\n"
-            f"⚖️ <b>Risk:Reward:</b> 1:{pick.get('risk_reward_ratio', 3.0):.1f}\n\n"
-            f"💰 <b>Plan For ₹1,000 Budget:</b>\n"
-            f"  • Buy Qty: <b>{shares_1k} shares</b> (Invest: ₹{shares_1k * ltp:,.0f})\n"
-            f"  • Target 1 Profit: <font color='#00ff00'><b>+₹{prof_1k:,.0f}</b></font>\n"
-            f"  • Max Risk at SL: <font color='#ff0000'><b>-₹{loss_1k:,.0f}</b></font>\n\n"
-            f"📈 <b>Technical Setup:</b>\n  • {tech_setup}\n\n"
-            f"🏢 <b>Fundamental Catalyst:</b>\n  • {fund_reason}\n\n"
-            f"🛡️ <b>Exit Rule:</b> Move SL to cost price once Target 1 is hit. Trail 20-day EMA.\n"
-            f"━━━━━━━━━━━━━━━━━━━\n"
-            f"<i>Delivery / CNC order. Hold with patience according to timeframe.</i>"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🕐 <b>AI Decision Time:</b> <code>{decision_time_str}</code>\n"
+            f"📋 <b>Trade Type:</b> <code>DELIVERY / CNC (Multi-Day Hold)</code>\n"
+            f"⏳ <b>Hold Duration:</b> <code>{horizon}</code>\n"
+            f"🎯 <b>Accuracy / Win Prob:</b> <code>{pick.get('conviction_pct', 70)}%</code> ({stars})\n\n"
+            f"<b>WHEN TO ENTER:</b>\n"
+            f"  • Current LTP: <b>₹{ltp:,.2f}</b>\n"
+            f"  • Ideal Buy Zone: <b>₹{buy_min:,.2f} – ₹{buy_max:,.2f}</b>\n\n"
+            f"<b>WHEN TO EXIT:</b>\n"
+            f"  • 🎯 Target 1: <b>₹{t1:,.2f}</b> (+{t1_gain:.1f}% Profit)\n"
+            f"  • 🚀 Target 2: <b>₹{t2:,.2f}</b> (+{t2_gain:.1f}% Extended Gain)\n"
+            f"  • 🛑 Stop Loss: <b>₹{sl:,.2f}</b> (-{sl_risk:.1f}% Max Risk)\n"
+            f"  • ⚖️ Risk/Reward: 1:{pick.get('risk_reward_ratio', 3.0):.1f}\n"
+            f"  • 🛡️ Trailing Rule: Trail SL to entry price once Target 1 is hit.\n\n"
+            f"💡 <b>Reason / Catalysts:</b>\n"
+            f"  • Technical: {tech_setup}\n"
+            f"  • Catalyst: {fund_reason}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"✅ <b>Delivery/CNC: Hold for {horizon}. Do NOT exit same day.</b>\n"
+            f"<i>Analysis-only. Verify in broker terminal before trading.</i>"
         )
 
         result = self.send_message(msg, parse_mode="HTML")

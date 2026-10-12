@@ -61,7 +61,7 @@ export default function OptionsRadarPage() {
         if (setupId) setSentSingle(prev => ({ ...prev, [setupId]: 'sent' }));
         showToast('✅ Broadcasted Options Setup to Telegram!', 'success');
       } else {
-        showToast('❌ Telegram alert failed.', 'error');
+        showToast(`❌ ${res.message || res.error || 'Telegram alert failed.'}`, 'error');
       }
     } catch (err) {
       showToast(`Error: ${err.message}`, 'error');
