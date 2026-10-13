@@ -345,27 +345,21 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
     def get_quote(self, symbol: str) -> Optional[Quote]:
         """
         Fetches live quote using batch cache for real-time performance.
-        Falls back to DemoDataProvider if Angel One is unauthenticated or has network issues.
+        Returns cached quote if available, or None if unauthenticated/offline.
         """
         if not self.is_authenticated:
-            return self.fallback_provider.get_quote(symbol)
+            return self._batch_quotes_cache.get(symbol)
 
         self._refresh_batch_quotes()
-        quote = self._batch_quotes_cache.get(symbol)
-        if quote:
-            return quote
-            
-        return self.fallback_provider.get_quote(symbol)
+        return self._batch_quotes_cache.get(symbol)
 
     def get_all_quotes(self) -> Dict[str, Quote]:
         """Returns map of all universe quotes directly from live Angel One session."""
         if not self.is_authenticated:
-            return {sym: self.fallback_provider.get_quote(sym) for sym in NSE_UNIVERSE if self.fallback_provider.get_quote(sym)}
+            return dict(self._batch_quotes_cache)
             
         self._refresh_batch_quotes()
-        if self._batch_quotes_cache:
-            return dict(self._batch_quotes_cache)
-        return {sym: self.fallback_provider.get_quote(sym) for sym in NSE_UNIVERSE if self.fallback_provider.get_quote(sym)}
+        return dict(self._batch_quotes_cache)
 
     # Timeframe mapping to Angel One API interval codes
     _TF_MAP = {
@@ -455,10 +449,11 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
     def get_candles(self, symbol: str, timeframe: str = "5m", count: int = 75) -> pd.DataFrame:
         """
         Returns real intraday OHLCV candles from Angel One getCandleData API.
-        When authenticated, fetches actual historical tick data with fast fallback and caching.
+        When authenticated, fetches actual historical tick data with caching.
+        Returns empty DataFrame if unauthenticated or unavailable.
         """
         if symbol not in NSE_UNIVERSE:
-            return self.fallback_provider.get_candles(symbol, timeframe, count)
+            return pd.DataFrame()
 
         # Check existing cache (120s TTL for intraday)
         now = datetime.datetime.utcnow()
@@ -475,43 +470,85 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
             return df_cached
 
         if not self.is_authenticated:
-            df = self.fallback_provider.get_candles(symbol, timeframe, count)
-        else:
-            df = self._fetch_real_candles(symbol, timeframe, count)
-            if df.empty:
-                df = self.fallback_provider.get_candles(symbol, timeframe, count)
+            return pd.DataFrame()
+        
+        df = self._fetch_real_candles(symbol, timeframe, count)
+        if df.empty:
+            return pd.DataFrame()
 
-        if not df.empty:
-            live_q = self.get_quote(symbol)
-            if live_q and live_q.ltp > 0:
-                last_hist = float(df.iloc[-1]['close'])
-                # If fallback candle price level diverges by >20% from live quote (e.g. stock split or outdated base),
-                # normalize the entire series to align with live LTP so indicators (VWAP, ATR, SMA) remain accurate.
-                if last_hist > 0 and abs(live_q.ltp - last_hist) / last_hist > 0.20:
-                    ratio = live_q.ltp / last_hist
-                    for col in ['open', 'high', 'low', 'close']:
-                        df[col] = (df[col] * ratio).round(2)
-                df.loc[df.index[-1], 'close'] = live_q.ltp
-                df.loc[df.index[-1], 'high'] = max(float(df.iloc[-1]['high']), live_q.ltp)
-                df.loc[df.index[-1], 'low'] = min(float(df.iloc[-1]['low']), live_q.ltp)
-            self._candles_cache[symbol] = df
-            self._candles_timestamp[symbol] = now
-            return df.tail(count).copy()
+        live_q = self.get_quote(symbol)
+        if live_q and live_q.ltp > 0:
+            last_hist = float(df.iloc[-1]['close'])
+            if last_hist > 0 and abs(live_q.ltp - last_hist) / last_hist > 0.20:
+                ratio = live_q.ltp / last_hist
+                for col in ['open', 'high', 'low', 'close']:
+                    df[col] = (df[col] * ratio).round(2)
+            df.loc[df.index[-1], 'close'] = live_q.ltp
+            df.loc[df.index[-1], 'high'] = max(float(df.iloc[-1]['high']), live_q.ltp)
+            df.loc[df.index[-1], 'low'] = min(float(df.iloc[-1]['low']), live_q.ltp)
+        self._candles_cache[symbol] = df
+        self._candles_timestamp[symbol] = now
+        return df.tail(count).copy()
 
-        return self.fallback_provider.get_candles(symbol, timeframe, count)
+    def _default_offline_indices(self) -> Dict[str, IndexSummary]:
+        return {
+            "NIFTY 50": IndexSummary(
+                symbol="NIFTY 50",
+                name="Nifty 50 Index",
+                ltp=0.0,
+                change=0.0,
+                change_pct=0.0,
+                trend="NEUTRAL",
+                advance_decline_ratio=1.0
+            ),
+            "BANK NIFTY": IndexSummary(
+                symbol="BANK NIFTY",
+                name="Bank Nifty Index",
+                ltp=0.0,
+                change=0.0,
+                change_pct=0.0,
+                trend="NEUTRAL",
+                advance_decline_ratio=1.0
+            ),
+            "BANKNIFTY": IndexSummary(
+                symbol="BANKNIFTY",
+                name="Bank Nifty Index",
+                ltp=0.0,
+                change=0.0,
+                change_pct=0.0,
+                trend="NEUTRAL",
+                advance_decline_ratio=1.0
+            ),
+            "NIFTY IT": IndexSummary(
+                symbol="NIFTY IT",
+                name="Nifty IT Index",
+                ltp=0.0,
+                change=0.0,
+                change_pct=0.0,
+                trend="NEUTRAL",
+                advance_decline_ratio=1.0
+            ),
+            "NIFTY AUTO": IndexSummary(
+                symbol="NIFTY AUTO",
+                name="Nifty Auto Index",
+                ltp=0.0,
+                change=0.0,
+                change_pct=0.0,
+                trend="NEUTRAL",
+                advance_decline_ratio=1.0
+            )
+        }
 
     def get_indices(self) -> Dict[str, IndexSummary]:
         """
         Fetches live Nifty 50 and Bank Nifty index values directly from Angel One.
         """
         if not self.is_authenticated:
-            return self.fallback_provider.get_indices()
+            return self._indices_cache if self._indices_cache else self._default_offline_indices()
 
         # Check circuit breaker cooldown
         if time.time() < self._indices_error_cooldown_until:
-            if self._indices_cache:
-                return self._indices_cache
-            return self.fallback_provider.get_indices()
+            return self._indices_cache if self._indices_cache else self._default_offline_indices()
 
         now = datetime.datetime.utcnow()
         if (self._indices_timestamp and 
@@ -544,12 +581,10 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
                 elif tok == "99926009" and ltp > 0:
                     banknifty_ltp = ltp
 
-            # If we could not get live prices, do NOT show stale hardcoded values
+            # If we could not get live prices, return cached or default offline data
             if nifty_ltp is None or banknifty_ltp is None:
-                logger.warning("Angel One index LTP fetch returned no valid prices. Returning cached or demo data.")
-                if self._indices_cache:
-                    return self._indices_cache   # Return last good cache
-                return self.fallback_provider.get_indices()
+                logger.warning("Angel One index LTP fetch returned no valid prices. Returning cached or default data.")
+                return self._indices_cache if self._indices_cache else self._default_offline_indices()
 
             # Compute intraday changes relative to today's opening base
             today = datetime.datetime.utcnow().date()
@@ -580,6 +615,15 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
                     change=nifty_chg,
                     change_pct=nifty_pct,
                     trend="BULLISH" if nifty_pct > 0.1 else ("BEARISH" if nifty_pct < -0.1 else "SIDEWAYS"),
+                    advance_decline_ratio=ad_live
+                ),
+                "BANK NIFTY": IndexSummary(
+                    symbol="BANK NIFTY",
+                    name="Nifty Bank Index",
+                    ltp=round(banknifty_ltp, 2),
+                    change=bn_chg,
+                    change_pct=bn_pct,
+                    trend="BULLISH" if bn_pct > 0.1 else ("BEARISH" if bn_pct < -0.1 else "SIDEWAYS"),
                     advance_decline_ratio=ad_live
                 ),
                 "BANKNIFTY": IndexSummary(
@@ -617,9 +661,7 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
             logger.error(f"Error fetching Angel One indices: {e}")
             self._indices_timestamp = now
             self._indices_error_cooldown_until = time.time() + 15.0
-            if self._indices_cache:
-                return self._indices_cache   # Return last good cache, not demo random
-            return self.fallback_provider.get_indices()
+            return self._indices_cache if self._indices_cache else self._default_offline_indices()
 
     def get_market_breadth(self) -> MarketBreadth:
         """
@@ -627,7 +669,15 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
         """
         quotes = self.get_all_quotes()
         if not quotes:
-            return self.fallback_provider.get_market_breadth()
+            return MarketBreadth(
+                advances=0,
+                declines=0,
+                unchanged=0,
+                advance_decline_ratio=1.0,
+                nifty500_above_20ema_pct=50.0,
+                market_regime="SIDEWAYS",
+                regime_confidence=0.5
+            )
             
         adv = sum(1 for q in quotes.values() if q.change_pct > 0)
         dec = sum(1 for q in quotes.values() if q.change_pct < 0)
@@ -667,7 +717,7 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
         """
         quotes = self.get_all_quotes()
         if not quotes:
-            return self.fallback_provider.get_sector_performance()
+            return []
             
         sector_groups: Dict[str, List[Quote]] = {}
         for q in quotes.values():
