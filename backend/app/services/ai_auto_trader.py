@@ -27,7 +27,7 @@ logger = logging.getLogger("ai_auto_trader")
 class AIAutoTraderService:
     def __init__(self):
         self.enabled: bool = True
-        self.min_win_rate: float = 0.50  # Must be > 50% win rate / ML probability
+        self.min_win_rate: float = 0.58  # Must be >= 58% win rate / calibrated ML probability
         self.trade_budget_per_order: float = 2000.0  # ₹2,000 INR per paper trade
         self.interval_seconds: int = 300  # 5 minutes
         self.max_concurrent_ai_trades: int = 5
@@ -61,7 +61,7 @@ class AIAutoTraderService:
         """
         Executes a 5-minute cycle:
         1. Queries AI recommendations (strictly Intraday)
-        2. Filters only trades where ml_probability > 0.50 (>50%)
+        2. Filters only trades where ml_probability >= 0.58 (>=58% calibrated confidence)
         3. Excludes existing open positions in the same symbol
         4. Enforces safety limits (max concurrent trades, cash balance)
         5. Executes paper trade and logs to `ai_trade_transactions` table for future ML training
@@ -72,7 +72,7 @@ class AIAutoTraderService:
         from app.routers.recommendations import get_ai_recommendations
 
         self.last_run_time = datetime.datetime.now(datetime.timezone.utc)
-        logger.info("🤖 AI 5-Min Auto-Trader scanning for high-conviction Intraday trades (>50% win rate)...")
+        logger.info("🤖 AI 5-Min Auto-Trader scanning for high-conviction Intraday trades (>=58% win rate)...")
 
         # 1. Fetch fresh recommendations (Intraday scanner)
         rec_data = get_ai_recommendations(limit=10)
@@ -90,13 +90,19 @@ class AIAutoTraderService:
             entry = rec.get("entry_price", 0.0)
             target = rec.get("target_price", 0.0)
             sl = rec.get("stop_loss", 0.0)
+            direction = rec.get("direction", "LONG").upper()
+            target_pct = abs(target - entry) / entry if entry > 0 else 0.0
 
             # Strict Checks:
             # - Strictly Intraday (NO DELIVERY)
-            # - Win rate / ML probability > 50%
-            # - Valid prices
+            # - Calibrated ML probability >= 58%
+            # - Valid prices with direction alignment:
+            #   LONG: sl < entry < target; SHORT: sl > entry > target
+            # - Realistic intraday target distance (<= 2.5%)
             # - Not already an open position in this stock
-            if ml_prob > self.min_win_rate and entry > 0 and target > 0 and sl > 0:
+            direction_valid = (sl < entry < target) if direction == "LONG" else (sl > entry > target)
+            if (ml_prob >= self.min_win_rate and entry > 0 and target > 0 and sl > 0
+                    and direction_valid and target_pct <= 0.025):
                 if sym not in open_symbols:
                     qualified_candidates.append(rec)
 

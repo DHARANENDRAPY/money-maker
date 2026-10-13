@@ -226,6 +226,24 @@ class SignalGenerator:
         if direction == "NO_TRADE" or not strategy:
             return None
             
+        # Realistic Intraday Risk-Reward Clamping
+        # On NSE equities, 5m ATR is ~0.15-0.35% of price, daily range is ~1.0-2.0%.
+        # Intraday MIS trades require realistic Stop Loss (0.35% - 1.2% / ~1.0x ATR)
+        # and realistic Target 1 (0.8% - 2.0% / 1.5x-2.0x ATR) achievable before 15:15 IST.
+        min_sl_dist = max(entry * 0.0035, atr * 0.8)
+        max_sl_dist = min(entry * 0.015, max(atr * 1.5, entry * 0.008))
+
+        if direction == "LONG":
+            raw_risk = entry - stop_loss
+            clamped_risk = max(min_sl_dist, min(raw_risk if raw_risk > 0 else (atr * 1.0), max_sl_dist))
+            stop_loss = round(entry - clamped_risk, 2)
+            target = round(entry + (clamped_risk * 1.8), 2)
+        elif direction == "SHORT":
+            raw_risk = stop_loss - entry
+            clamped_risk = max(min_sl_dist, min(raw_risk if raw_risk > 0 else (atr * 1.0), max_sl_dist))
+            stop_loss = round(entry + clamped_risk, 2)
+            target = round(entry - (clamped_risk * 1.8), 2)
+
         risk = abs(entry - stop_loss)
         reward = abs(target - entry)
         if risk == 0:

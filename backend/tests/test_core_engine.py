@@ -19,8 +19,9 @@ def generate_sample_candles(n=50, base_price=1000.0):
     for _ in range(n - 1):
         prices.append(prices[-1] + np.random.normal(0, 2.0))
         
+    timestamps = pd.date_range("2026-10-09 09:15:00", periods=n, freq="5min")
     data = {
-        "timestamp": [f"2026-10-09 09:{15+i*5:02d}:00" for i in range(n)],
+        "timestamp": [ts.strftime("%Y-%m-%d %H:%M:%S") for ts in timestamps],
         "open": prices,
         "high": [p + 2.5 for p in prices],
         "low": [p - 2.5 for p in prices],
@@ -109,3 +110,26 @@ def test_ml_model_training_pipeline():
     assert "Ensemble" in meta["model_type"] or meta["model_type"] == "GradientBoosting"
     assert "accuracy" in meta
     assert "calibration_curve" in meta
+
+def test_signal_clamping_realistic_intraday():
+    df = generate_sample_candles(50, 2500.0)
+    enriched = enrich_candles_with_indicators(df)
+    sig = SignalGenerator.generate_signal_for_stock(
+        symbol="RELIANCE",
+        df=enriched,
+        current_price=2500.0,
+        sector="Energy",
+        sector_change_pct=1.0,
+        nifty_change_pct=0.5,
+        market_regime="BULLISH_TRENDING",
+        market_breadth_ad=1.5
+    )
+    if sig:
+        if sig.direction == "LONG":
+            assert sig.stop_loss < sig.entry_price < sig.target_price
+            assert (sig.target_price - sig.entry_price) / sig.entry_price <= 0.03
+        elif sig.direction == "SHORT":
+            assert sig.stop_loss > sig.entry_price > sig.target_price
+            assert (sig.entry_price - sig.target_price) / sig.entry_price <= 0.03
+        assert sig.risk_reward_ratio >= 1.2
+

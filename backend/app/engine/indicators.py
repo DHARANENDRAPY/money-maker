@@ -3,13 +3,30 @@ import pandas as pd
 from typing import List, Dict, Any, Tuple
 
 def calculate_vwap(df: pd.DataFrame) -> pd.Series:
-    """Calculates Volume Weighted Average Price (VWAP) for intraday data."""
+    """Calculates Volume Weighted Average Price (VWAP) for intraday data, resetting daily."""
     if df.empty or 'volume' not in df.columns:
         return pd.Series(index=df.index, dtype=float)
     
     typical_price = (df['high'] + df['low'] + df['close']) / 3.0
-    cum_vol_price = (typical_price * df['volume']).cumsum()
-    cum_vol = df['volume'].cumsum()
+    vol_price = typical_price * df['volume']
+
+    # Reset VWAP per session if timestamp/date information is present
+    if isinstance(df.index, pd.DatetimeIndex):
+        dates = df.index.date
+        cum_vol_price = vol_price.groupby(dates).cumsum()
+        cum_vol = df['volume'].groupby(dates).cumsum()
+    elif 'timestamp' in df.columns:
+        ts = pd.to_datetime(df['timestamp'], errors='coerce')
+        if not ts.isna().all():
+            dates = ts.dt.date
+            cum_vol_price = vol_price.groupby(dates).cumsum()
+            cum_vol = df['volume'].groupby(dates).cumsum()
+        else:
+            cum_vol_price = vol_price.cumsum()
+            cum_vol = df['volume'].cumsum()
+    else:
+        cum_vol_price = vol_price.cumsum()
+        cum_vol = df['volume'].cumsum()
     
     # Avoid zero division
     vwap = cum_vol_price / cum_vol.replace(0, np.nan)
@@ -132,15 +149,33 @@ def detect_key_levels(df: pd.DataFrame, opening_range_bars: int = 3) -> Dict[str
     if df.empty:
         return {}
         
-    latest_close = float(df['close'].iloc[-1])
-    day_high = float(df['high'].max())
-    day_low = float(df['low'].min())
-    day_open = float(df['open'].iloc[0])
+    # Isolate today's session if timestamp/datetime info is available
+    if isinstance(df.index, pd.DatetimeIndex):
+        latest_date = df.index[-1].date()
+        today_df = df[df.index.date == latest_date]
+    elif 'timestamp' in df.columns:
+        ts = pd.to_datetime(df['timestamp'], errors='coerce')
+        valid_ts = ts.dropna()
+        if not valid_ts.empty:
+            latest_date = valid_ts.iloc[-1].date()
+            today_df = df[ts.dt.date == latest_date]
+        else:
+            today_df = df.tail(min(len(df), 75))
+    else:
+        today_df = df.tail(min(len(df), 75))
+
+    if today_df.empty:
+        today_df = df
+
+    latest_close = float(today_df['close'].iloc[-1])
+    day_high = float(today_df['high'].max())
+    day_low = float(today_df['low'].min())
+    day_open = float(today_df['open'].iloc[0])
     
-    # Opening range (e.g. first 3 x 5m candles = 15m)
-    orb_bars = min(len(df), opening_range_bars)
-    opening_range_high = float(df['high'].iloc[:orb_bars].max())
-    opening_range_low = float(df['low'].iloc[:orb_bars].min())
+    # Opening range strictly from today's opening bars (e.g. first 3 x 5m candles = 15m)
+    orb_bars = min(len(today_df), opening_range_bars)
+    opening_range_high = float(today_df['high'].iloc[:orb_bars].max())
+    opening_range_low = float(today_df['low'].iloc[:orb_bars].min())
     
     # Pivot Points (Classical)
     pp = (day_high + day_low + latest_close) / 3.0
