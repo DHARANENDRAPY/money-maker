@@ -41,6 +41,7 @@ export default function HistoryPage() {
   const [aiHistoryData, setAiHistoryData] = useState([]);
   const [aiAccuracy, setAiAccuracy] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
   const loadHistory = useCallback(async (isSilent = false) => {

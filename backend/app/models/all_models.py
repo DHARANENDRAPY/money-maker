@@ -142,7 +142,7 @@ class RecommendationHistoryRecord(Base):
     
     trade_type = Column(String(32), index=True)  # "INTRADAY" or "DELIVERY"
     direction = Column(String(16), default="LONG")  # "LONG" or "SHORT"
-    strategy = Column(String(64), nullable=True)
+    strategy = Column(Text, nullable=True)
     
     entry_price = Column(Float)
     target_1 = Column(Float)
@@ -153,7 +153,7 @@ class RecommendationHistoryRecord(Base):
     expected_profit_pct = Column(Float, default=0.0)
     expected_loss_pct = Column(Float, default=0.0)
     
-    holding_period = Column(String(64), default="15-45 Mins")  # e.g. "15-45 Mins" or "2-4 Weeks"
+    holding_period = Column(Text, default="15-45 Mins")  # e.g. "15-45 Mins" or "2-4 Weeks"
     win_probability_pct = Column(Integer, default=60)
     conviction_pct = Column(Integer, default=70)
     
