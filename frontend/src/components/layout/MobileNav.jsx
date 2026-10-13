@@ -1,12 +1,13 @@
 import React from 'react';
 import { useMarket } from '../../context/MarketContext';
-import { Target, PackageCheck, Wallet, History } from 'lucide-react';
+import { Target, PackageCheck, Wallet, History, Settings } from 'lucide-react';
 
 const mobileNavItems = [
   { id: 'recommendations', label: 'Intraday', icon: Target },
   { id: 'delivery', label: 'Delivery', icon: PackageCheck },
   { id: 'paper', label: 'Paper', icon: Wallet },
   { id: 'history', label: 'History', icon: History },
+  { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
 export default function MobileNav() {

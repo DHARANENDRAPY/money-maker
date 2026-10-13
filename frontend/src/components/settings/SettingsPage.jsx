@@ -407,7 +407,6 @@ export default function SettingsPage() {
               </button>
             </div>
           </form>
-        )}
       </div>
 
       {/* Telegram Notifications Card */}

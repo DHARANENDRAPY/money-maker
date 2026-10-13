@@ -10,6 +10,7 @@ import RecommendationsPage from './components/recommendations/RecommendationsPag
 import DeliveryPage from './components/delivery/DeliveryPage';
 import PaperTradingPage from './components/paper/PaperTradingPage';
 import HistoryPage from './components/history/HistoryPage';
+import SettingsPage from './components/settings/SettingsPage';
 import PaperTradingDrawer from './components/paper/PaperTradingDrawer';
 
 class ErrorBoundary extends Component {
@@ -60,6 +61,8 @@ function DashboardContent() {
         return <PaperTradingPage />;
       case 'history':
         return <HistoryPage />;
+      case 'settings':
+        return <SettingsPage />;
       default:
         return <RecommendationsPage />;
     }

@@ -4,7 +4,8 @@ import {
   Wallet,
   History,
   TrendingUp,
-  ShieldAlert
+  ShieldAlert,
+  Settings
 } from 'lucide-react';
 import { useMarket } from '../../context/MarketContext';
 
@@ -13,6 +14,7 @@ const navItems = [
   { id: 'delivery', label: 'Delivery & Swing', icon: PackageCheck, badge: '💎 CNC' },
   { id: 'paper', label: 'Paper Trading', icon: Wallet, badge: '🎮 Live' },
   { id: 'history', label: 'All Recommendations', icon: History, badge: '📜 Vault' },
+  { id: 'settings', label: 'Broker & Settings', icon: Settings, badge: '⚙️ API' },
 ];
 
 export default function Sidebar() {
