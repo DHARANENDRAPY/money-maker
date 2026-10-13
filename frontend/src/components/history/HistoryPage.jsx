@@ -103,11 +103,12 @@ export default function HistoryPage() {
     return historyData;
   };
 
-  const filteredHistory = getSourceData().filter((item) => {
+  const filteredHistory = (getSourceData() || []).filter((item) => {
+    if (!item) return false;
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return (
-      item.symbol.toLowerCase().includes(term) ||
+      (item.symbol && item.symbol.toLowerCase().includes(term)) ||
       (item.name && item.name.toLowerCase().includes(term)) ||
       (item.strategy && item.strategy.toLowerCase().includes(term))
     );

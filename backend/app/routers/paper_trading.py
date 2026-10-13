@@ -363,7 +363,19 @@ portfolio = PaperPortfolioStore()
 @router.get("/portfolio")
 def get_paper_portfolio() -> Dict[str, Any]:
     """Returns the current live paper trading portfolio and performance metrics."""
+    portfolio._load_from_db()
     return portfolio.get_summary()
+
+
+@router.post("/reload")
+def reload_paper_portfolio() -> Dict[str, Any]:
+    """Forces reloading portfolio positions and closed trades from DB."""
+    portfolio._load_from_db()
+    return {
+        "status": "SUCCESS",
+        "open_count": len(portfolio.positions),
+        "closed_count": len(portfolio.closed_trades)
+    }
 
 
 @router.post("/place-trade")
