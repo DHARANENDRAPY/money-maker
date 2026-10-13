@@ -170,8 +170,8 @@ class PaperPortfolioStore:
                 if now_ist.weekday() < 5 and (now_ist.hour > 15 or (now_ist.hour == 15 and now_ist.minute >= 15)):
                     auto_exit_reason = "INTRADAY_MARKET_CLOSE_SQUAREOFF"
 
-            # 2. Target 1 & Stop Loss Price Triggers
-            if not auto_exit_reason:
+            # 2. Target 1 & Stop Loss Price Triggers (STRICTLY FOR INTRADAY ONLY; NEVER AUTO-SELL DELIVERY)
+            if not auto_exit_reason and pos.get("trade_type") == "INTRADAY":
                 if is_long:
                     if curr_price >= t1 and not pos.get("t1_booked"):
                         auto_exit_reason = "TARGET_1_HIT"

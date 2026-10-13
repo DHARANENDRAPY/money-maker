@@ -16,7 +16,7 @@ except ImportError:
     pyotp = None
 
 from app.providers.base import BaseDataProvider
-from app.providers.demo_provider import NSE_UNIVERSE, DemoDataProvider
+from app.providers.universe import NSE_UNIVERSE
 from app.schemas.market_schemas import Quote, IndexSummary, SectorPerformance, MarketBreadth
 
 logger = logging.getLogger("angel_one_provider")
@@ -92,7 +92,6 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
         self.feed_token = feed_token
         self.is_authenticated = bool(self.auth_token and self.feed_token)
         self.last_ping_time = datetime.datetime.utcnow()
-        self.fallback_provider = DemoDataProvider()
         
         # In-memory live caches
         self._batch_quotes_cache: Dict[str, Quote] = {}

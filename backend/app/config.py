@@ -16,9 +16,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite:///./trade_intelligence.db"
     
-    # Market Data Provider
-    DATA_PROVIDER: str = "demo"  # 'demo' or 'angel_one'
-    DEMO_MODE: bool = True
+    # Market Data Provider (Live Angel One SmartAPI Only)
+    DATA_PROVIDER: str = "angel_one"
+    DEMO_MODE: bool = False
     
     # Angel One SmartAPI Credentials (empty by default, configured via UI or .env)
     ANGEL_API_KEY: str = ""

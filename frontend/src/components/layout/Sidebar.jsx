@@ -44,7 +44,7 @@ export default function Sidebar() {
           <div className="flex items-center space-x-2">
             <span className={`w-2 h-2 rounded-full ${isLiveWsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
             <span className="text-slate-300 font-mono text-[11px]">
-              {overview?.data_source === 'ANGEL_ONE_SMARTAPI' ? 'Angel One Live' : 'Demo Simulation'}
+              {overview?.data_source === 'ANGEL_ONE_SMARTAPI' ? 'Angel One Live' : 'Broker Offline'}
             </span>
           </div>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">

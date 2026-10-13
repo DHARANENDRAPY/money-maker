@@ -19,11 +19,11 @@ export default function StatusBanner() {
   }
 
   return (
-    <div className="bg-amber-950/40 border-b border-amber-800/40 px-6 py-1.5 flex items-center justify-between text-xs text-amber-200">
+    <div className="bg-rose-950/40 border-b border-rose-800/40 px-6 py-1.5 flex items-center justify-between text-xs text-rose-200">
       <div className="flex items-center space-x-2">
-        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
         <span>
-          <strong>Demo Simulation Mode:</strong> High-fidelity synthetic NSE intraday market feed active. Real broker connection is not active.
+          <strong>Live Market Feed Offline:</strong> Angel One SmartAPI is not connected. Enter your broker credentials to stream real-time NSE market quotes.
         </span>
       </div>
       <button

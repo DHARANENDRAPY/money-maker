@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.market_state import market_state
 from app.services.alert_service import alert_service
-from app.providers.demo_provider import NSE_UNIVERSE
+from app.providers.universe import NSE_UNIVERSE
 from app.schemas.market_schemas import OverviewResponse, Quote, Candle, StockAnalysisResponse
 from app.schemas.all_schemas import SignalItem, AlertItem, RiskCalculationRequest, PositionSizingResult, NewsItem, TradeJournalCreate, DisciplineAnalytics, SettingsUpdateRequest
 from app.engine.indicators import enrich_candles_with_indicators, detect_key_levels

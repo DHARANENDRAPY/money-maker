@@ -12,8 +12,7 @@ from fastapi import WebSocket
 import pandas as pd
 
 from app.config import settings
-from app.providers.base import BaseDataProvider
-from app.providers.demo_provider import DemoDataProvider, NSE_UNIVERSE
+from app.providers.universe import NSE_UNIVERSE
 from app.providers.angel_one_provider import AngelOneSmartAPIProvider
 from app.providers.news_provider import NewsProvider
 from app.engine.scanner import MarketScanner
@@ -25,11 +24,10 @@ from app.ml.model_trainer import ModelTrainingPipeline
 class MarketStateManager:
     """
     Central hub managing data providers, active signals, scanner state,
-    and connected WebSocket subscribers.
+    and connected WebSocket subscribers. Exclusively uses live broker (Angel One).
     """
 
     def __init__(self):
-        self.demo_provider = DemoDataProvider()
         self.angel_provider = AngelOneSmartAPIProvider(
             api_key=settings.ANGEL_API_KEY,
             client_code=settings.ANGEL_CLIENT_CODE,
@@ -37,19 +35,14 @@ class MarketStateManager:
             totp_secret=settings.ANGEL_TOTP_SECRET
         )
         self.news_provider = NewsProvider()
+        self.active_provider = self.angel_provider
+        self.active_provider_name = "angel_one"
         
-        # If configured for Angel One in .env, authenticate on boot
-        if settings.DATA_PROVIDER == "angel_one" and settings.ANGEL_API_KEY and settings.ANGEL_CLIENT_CODE:
+        # Authenticate on boot if credentials are present
+        if settings.ANGEL_API_KEY and settings.ANGEL_CLIENT_CODE:
             auth_res = self.angel_provider.authenticate()
-            if auth_res.get("success"):
-                self.active_provider = self.angel_provider
-                self.active_provider_name = "angel_one"
-            else:
-                self.active_provider = self.demo_provider
-                self.active_provider_name = "demo"
-        else:
-            self.active_provider = self.demo_provider
-            self.active_provider_name = "demo"
+            if not auth_res.get("success"):
+                logger.warning(f"Angel One initial boot auth failed: {auth_res.get('error')}")
         
         self.watchlist: Set[str] = {"RELIANCE", "INFY", "HDFCBANK", "ICICIBANK", "TATAMOTORS", "TCS", "SBIN"}
         self.active_signals: Dict[str, SignalItem] = {}
@@ -115,24 +108,18 @@ class MarketStateManager:
             except Exception as e:
                 self.swing_status = f"Load Error: {e}"
 
-        # Fallback: quick training on demo data ONLY if no production model was loaded
         if not production_loaded:
-            try:
-                df_dict = {sym: self.demo_provider.get_candles(sym, "5m", 75) for sym in NSE_UNIVERSE.keys()}
-                X, y, r = self.ml_pipeline.prepare_dataset(df_dict)
-                if len(X) >= 50:
-                    self.ml_pipeline.train_walk_forward(X, y, r, train_ratio=0.7)
-                    self.model_status = "Active (Ensemble GBT+RF v2.0 -- demo data)"
-                else:
-                    self.model_status = "Baseline Heuristic (insufficient data for training)"
-            except Exception as e:
-                self.model_status = "Training Error / Fallback Baseline"
+            self.model_status = "Awaiting Live Market Data"
 
     def _init_sample_signals(self):
-        # Generate initial signals from universe
+        # Only initialize signals if active broker provider is authenticated
+        if not self.active_provider.is_live_feed():
+            return
         nifty = self.active_provider.get_indices().get("NIFTY 50")
         nifty_chg = nifty.change_pct if nifty else 0.58
         breadth = self.active_provider.get_market_breadth()
+        if not breadth:
+            return
         
         for sym in ["INFY", "RELIANCE", "TATAMOTORS", "ICICIBANK"]:
             df = self.active_provider.get_candles(sym, "5m", 75)
@@ -154,33 +141,28 @@ class MarketStateManager:
                     self.active_signals[sig.signal_id] = sig
 
     def switch_provider(self, provider_name: str, config: Optional[Dict[str, Any]] = None):
-        """Switches between Demo and Angel One provider with validation."""
-        if provider_name.lower() == "angel_one":
-            if config:
-                self.angel_provider = AngelOneSmartAPIProvider(
-                    api_key=config.get("api_key", ""),
-                    client_code=config.get("client_code", ""),
-                    pin=config.get("pin", ""),
-                    totp_secret=config.get("totp_secret", "")
-                )
-            res = self.angel_provider.authenticate()
-            if res.get("success"):
-                self.active_provider = self.angel_provider
-                self.active_provider_name = "angel_one"
-                alert_service.create_alert(
-                    alert_type="FEED_INTERRUPTED",
-                    severity="SUCCESS",
-                    title="Live Broker Connected",
-                    message=f"Switched data provider to Angel One SmartAPI (Client {self.angel_provider.client_code}).",
-                    symbol=None
-                )
-                return {"success": True, "provider": "ANGEL_ONE_SMARTAPI", "message": "Live Angel One feed active."}
-            else:
-                return {"success": False, "provider": "DEMO_SYNTHETIC", "error": res.get("error", "Authentication failed. Reverted to Demo mode.")}
+        """Authenticates and connects Angel One SmartAPI live broker feed."""
+        if config:
+            self.angel_provider = AngelOneSmartAPIProvider(
+                api_key=config.get("api_key", ""),
+                client_code=config.get("client_code", ""),
+                pin=config.get("pin", ""),
+                totp_secret=config.get("totp_secret", "")
+            )
+        res = self.angel_provider.authenticate()
+        if res.get("success"):
+            self.active_provider = self.angel_provider
+            self.active_provider_name = "angel_one"
+            alert_service.create_alert(
+                alert_type="FEED_INTERRUPTED",
+                severity="SUCCESS",
+                title="Live Broker Connected",
+                message=f"Connected to Angel One SmartAPI (Client {self.angel_provider.client_code}).",
+                symbol=None
+            )
+            return {"success": True, "provider": "ANGEL_ONE_SMARTAPI", "message": "Live Angel One feed active."}
         else:
-            self.active_provider = self.demo_provider
-            self.active_provider_name = "demo"
-            return {"success": True, "provider": "DEMO_SYNTHETIC", "message": "Switched to Demo Simulation mode."}
+            return {"success": False, "provider": "ANGEL_ONE_SMARTAPI", "error": res.get("error", "Authentication failed. Check credentials.")}
 
     async def register_ws(self, websocket: WebSocket):
         await websocket.accept()

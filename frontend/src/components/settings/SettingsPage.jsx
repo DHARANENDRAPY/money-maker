@@ -64,7 +64,7 @@ const SETUP_STEPS = [
 
 export default function SettingsPage() {
   const { watchlist, toggleWatchlistSymbol, showToast, refreshOverview } = useMarket();
-  const [provider, setProvider] = useState('demo');
+  const [provider, setProvider] = useState('angel_one');
   const [apiKey, setApiKey] = useState('');
   const [clientCode, setClientCode] = useState('');
   const [pin, setPin] = useState('');
@@ -92,7 +92,7 @@ export default function SettingsPage() {
           fetchSettings(),
           fetchTelegramStatus().catch(() => null)
         ]);
-        setProvider(data.active_provider || 'demo');
+        setProvider('angel_one');
         setClientCode(data.angel_client_code || '');
         setIsAuthenticated(data.angel_authenticated || false);
         if (tg) {
@@ -249,83 +249,42 @@ export default function SettingsPage() {
             <h2 className="text-sm font-bold text-white uppercase tracking-wider">Market Data Feed</h2>
           </div>
           <div className={`flex items-center gap-2 text-[11px] font-mono px-3 py-1 rounded-full border ${
-            provider === 'angel_one' && isAuthenticated
+            isAuthenticated
               ? 'bg-emerald-950/60 border-emerald-700/60 text-emerald-300'
-              : 'bg-slate-950 border-slate-700 text-slate-400'
+              : 'bg-rose-950/60 border-rose-700/60 text-rose-300'
           }`}>
-            {provider === 'angel_one' && isAuthenticated
-              ? <><Wifi className="w-3 h-3" /> LIVE FEED</>
-              : <><WifiOff className="w-3 h-3" /> DEMO MODE</>
+            {isAuthenticated
+              ? <><Wifi className="w-3 h-3" /> LIVE FEED (CONNECTED)</>
+              : <><WifiOff className="w-3 h-3" /> BROKER OFFLINE</>
             }
           </div>
         </div>
 
-        {/* Mode Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div
-            onClick={() => setProvider('demo')}
-            className={`p-4 rounded-xl border cursor-pointer transition-all ${
-              provider === 'demo'
-                ? 'bg-cyan-950/30 border-cyan-500/50 shadow-md shadow-cyan-500/5'
-                : 'bg-slate-950/60 border-slate-700 hover:border-slate-600'
-            }`}
-          >
-            <div className="flex items-center space-x-2 mb-2">
-              <input type="radio" checked={provider === 'demo'} onChange={() => setProvider('demo')} className="text-cyan-500 accent-cyan-500" />
-              <span className="text-xs font-bold text-white">Demo Simulation</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">FREE</span>
+        {/* Angel One Connection Card */}
+        <div className="p-4 rounded-xl border bg-slate-950/60 border-slate-800">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-2">
+              <Key className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs font-bold text-white">Angel One SmartAPI (Live Broker Feed)</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                isAuthenticated 
+                  ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60' 
+                  : 'bg-rose-900/60 text-rose-300 border border-rose-700/60'
+              }`}>
+                {isAuthenticated ? 'AUTHENTICATED' : 'NOT CONNECTED'}
+              </span>
             </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              High-fidelity synthetic NSE intraday simulation. All features work — signals, factors, risk calculator, journal. No API key needed.
-            </p>
-            {provider === 'demo' && (
-              <div className="mt-2 flex items-center gap-1.5 text-[11px] text-cyan-400 font-medium">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Currently Active
-              </div>
+            {isAuthenticated && (
+              <span className="text-xs text-slate-400 font-mono">Client: {clientCode}</span>
             )}
           </div>
-
-          <div
-            onClick={() => setProvider('angel_one')}
-            className={`p-4 rounded-xl border cursor-pointer transition-all ${
-              provider === 'angel_one'
-                ? 'bg-cyan-950/30 border-cyan-500/50 shadow-md shadow-cyan-500/5'
-                : 'bg-slate-950/60 border-slate-700 hover:border-slate-600'
-            }`}
-          >
-            <div className="flex items-center space-x-2 mb-2">
-              <input type="radio" checked={provider === 'angel_one'} onChange={() => setProvider('angel_one')} className="text-cyan-500 accent-cyan-500" />
-              <span className="text-xs font-bold text-white">Angel One SmartAPI</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-400 font-mono border border-emerald-800/50">LIVE</span>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Connects to your real Angel One brokerage account for live NSE tick data, LTP quotes, and historical candles.
-            </p>
-            {provider === 'angel_one' && isAuthenticated && (
-              <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Live session active for {clientCode}
-              </div>
-            )}
-          </div>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            All prices, signals, and automated trades stream exclusively from your real Angel One brokerage account for genuine NSE market data.
+          </p>
         </div>
 
-        {/* Quick Switch to Demo */}
-        {provider === 'angel_one' && isAuthenticated && (
-          <div className="flex justify-end">
-            <button
-              onClick={handleSwitchToDemo}
-              disabled={isSaving}
-              className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Switch back to Demo
-            </button>
-          </div>
-        )}
-
         {/* Angel One Credentials Form */}
-        {provider === 'angel_one' && (
-          <form onSubmit={handleSaveProvider} className="space-y-5 pt-3 border-t border-slate-800">
+        <form onSubmit={handleSaveProvider} className="space-y-5 pt-3 border-t border-slate-800">
             {/* Step-by-step Guide Toggle */}
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-white flex items-center gap-2">

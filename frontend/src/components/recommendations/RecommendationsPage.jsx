@@ -805,7 +805,7 @@ export default function RecommendationsPage() {
           <div className="bg-slate-900/70 border border-slate-800/80 rounded-xl p-3">
             <div className="text-[10px] text-slate-500 uppercase tracking-wider">Live Broker Feed</div>
             <div className="text-xs font-bold text-cyan-400 mt-1 truncate">
-              {data.is_live_feed ? '🟢 Angel One Live Session' : 'Demo Synthetic Simulation'}
+              {data.is_live_feed ? '🟢 Angel One Live Session' : '🔴 Broker Offline (Connect in Settings)'}
             </div>
           </div>
         </div>

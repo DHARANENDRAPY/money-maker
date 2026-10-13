@@ -43,21 +43,19 @@ class AIAutoTraderService:
     def is_market_hours(self) -> bool:
         """
         NSE trading hours: Mon-Fri, 09:15 to 15:15 IST (Auto stops at 15:15 for MIS square-off).
-        If demo mode is active and user wants 24/7 testing, it allows running.
+        Strictly requires live authenticated broker connection.
         """
+        if not market_state.active_provider.is_live_feed():
+            return False
+
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
         weekday = now_ist.weekday()
 
-        # In live Angel One provider mode, enforce NSE live hours
-        if market_state.active_provider_name == "angel_one":
-            if weekday >= 5:
-                return False
-            total_minutes = now_ist.hour * 60 + now_ist.minute
-            return (9 * 60 + 15 <= total_minutes <= 15 * 60 + 15)
-
-        # In Demo provider mode, allow simulation continuously
-        return True
+        if weekday >= 5:
+            return False
+        total_minutes = now_ist.hour * 60 + now_ist.minute
+        return (9 * 60 + 15 <= total_minutes <= 15 * 60 + 15)
 
     def scan_and_execute_trades(self) -> Dict[str, Any]:
         """

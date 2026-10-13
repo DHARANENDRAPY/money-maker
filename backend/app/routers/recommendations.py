@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter
 
 from app.services.market_state import market_state
-from app.providers.demo_provider import NSE_UNIVERSE
+from app.providers.universe import NSE_UNIVERSE
 from app.engine.indicators import enrich_candles_with_indicators
 from app.engine.signals import SignalGenerator
 from app.schemas.all_schemas import SignalItem

@@ -19,7 +19,7 @@ from pydantic import BaseModel
 logger = logging.getLogger("delivery_engine")
 
 from app.services.market_state import market_state
-from app.providers.demo_provider import NSE_UNIVERSE
+from app.providers.universe import NSE_UNIVERSE
 from app.engine.indicators import enrich_candles_with_indicators
 from app.services.telegram_service import telegram_service
 from train_swing_delivery import SWING_DELIVERY_STOCKS, extract_daily_features

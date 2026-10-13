@@ -21,7 +21,7 @@ import requests
 
 sys.path.insert(0, str(Path.cwd()))
 from app.providers.angel_one_provider import AngelOneSmartAPIProvider
-from app.providers.demo_provider import NSE_UNIVERSE
+from app.providers.universe import NSE_UNIVERSE
 from app.config import settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
