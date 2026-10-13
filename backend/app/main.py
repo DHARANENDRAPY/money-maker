@@ -13,7 +13,8 @@ from app.routers import (
     recommendations_router,
     delivery_router,
     paper_trading_router,
-    options_radar_router
+    options_radar_router,
+    ai_trader_router
 )
 from app.services.market_state import market_state
 
@@ -24,6 +25,7 @@ logger = logging.getLogger("trade_intelligence_ai")
 Base.metadata.create_all(bind=engine)
 
 from app.services.auto_trainer import background_model_updater_loop
+from app.services.ai_auto_trader import ai_auto_trader_loop
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,12 +40,15 @@ async def lifespan(app: FastAPI):
     swing_fetch_task = asyncio.create_task(market_state._refresh_daily_candles_loop())
     # Background Live Market Intraday Top 3 Telegram Broadcaster
     intraday_tg_task = asyncio.create_task(live_intraday_telegram_broadcaster_loop())
+    # Background 5-minute AI Auto-Trader loop (strictly Intraday, win rate > 50%)
+    ai_trader_task = asyncio.create_task(ai_auto_trader_loop())
     yield
     broadcast_task.cancel()
     auto_train_task.cancel()
     reauth_task.cancel()
     swing_fetch_task.cancel()
     intraday_tg_task.cancel()
+    ai_trader_task.cancel()
     logger.info("Trade Intelligence AI Engine shutdown.")
 
 async def angel_reauth_loop():
@@ -223,8 +228,8 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -234,6 +239,7 @@ app.include_router(recommendations_router, prefix="/api")
 app.include_router(delivery_router, prefix="/api")
 app.include_router(paper_trading_router, prefix="/api")
 app.include_router(options_radar_router, prefix="/api")
+app.include_router(ai_trader_router, prefix="/api")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

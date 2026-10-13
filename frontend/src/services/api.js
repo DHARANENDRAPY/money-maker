@@ -1,9 +1,15 @@
-// API base URL — proxied through Vite dev server (no CORS issues)
-const BASE_URL = '/api';
-// WebSocket URL — also proxied
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
+// Base backend URL for cloud hosting (Netlify -> Render)
+const RAW_BACKEND = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '');
 
-export { WS_URL };
+// API base URL — falls back to local Vite dev proxy if not provided
+const BASE_URL = RAW_BACKEND ? `${RAW_BACKEND}/api` : '/api';
+
+// WebSocket URL
+const WS_URL = RAW_BACKEND
+  ? `${RAW_BACKEND.replace(/^http/, 'ws')}/ws`
+  : `${typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws'}://${typeof window !== 'undefined' ? window.location.host : 'localhost:8000'}/ws`;
+
+export { WS_URL, BASE_URL };
 
 export async function fetchOverview() {
   const res = await fetch(`${BASE_URL}/overview`);
@@ -122,7 +128,8 @@ export async function toggleWatchlist(symbol) {
 
 export async function testConnectionHealth() {
   try {
-    const res = await fetch('/health');
+    const healthUrl = RAW_BACKEND ? `${RAW_BACKEND}/health` : '/health';
+    const res = await fetch(healthUrl);
     if (!res.ok) return { online: false };
     const data = await res.json();
     return { online: true, ...data };
@@ -254,5 +261,51 @@ export async function fetchPaperTradingHistory(limit = 100) {
   if (!res.ok) throw new Error(`Paper history fetch failed: ${res.statusText}`);
   return res.json();
 }
+
+// --- AI Auto-Trader APIs ---
+export async function fetchAiTraderStatus() {
+  const res = await fetch(`${BASE_URL}/ai-trader/status`);
+  if (!res.ok) throw new Error(`AI Trader status fetch failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function toggleAiTrader(payload) {
+  const res = await fetch(`${BASE_URL}/ai-trader/toggle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error(`AI Trader toggle failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function triggerAiTraderScan() {
+  const res = await fetch(`${BASE_URL}/ai-trader/scan-now`, {
+    method: 'POST'
+  });
+  if (!res.ok) throw new Error(`Scan trigger failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchAiTradesHistory(limit = 100) {
+  const res = await fetch(`${BASE_URL}/ai-trader/history?limit=${limit}`);
+  if (!res.ok) throw new Error(`AI Trades history fetch failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchAiTradesAccuracy() {
+  const res = await fetch(`${BASE_URL}/ai-trader/accuracy`);
+  if (!res.ok) throw new Error(`AI Trades accuracy fetch failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function retrainFromAiTrades() {
+  const res = await fetch(`${BASE_URL}/ai-trader/train-from-trades`, {
+    method: 'POST'
+  });
+  if (!res.ok) throw new Error(`Train from trades failed: ${res.statusText}`);
+  return res.json();
+}
+
 
 

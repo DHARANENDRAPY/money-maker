@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useMarket } from '../../context/MarketContext';
 import { closePaperPosition, resetPaperPortfolio } from '../../services/api';
+import AiAutoTraderPanel from './AiAutoTraderPanel';
 
 export default function PaperTradingPage() {
   const { 
@@ -66,6 +67,11 @@ export default function PaperTradingPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+      {/* 5-Min AI Auto-Trader Control & Accuracy Panel */}
+      <AiAutoTraderPanel 
+        onTradeExecuted={refreshPaperPortfolio}
+        onSwitchToHistory={() => setActiveTab('history')}
+      />
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-emerald-950/30 to-slate-900 rounded-2xl p-5 md:p-6 border border-emerald-500/30 shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

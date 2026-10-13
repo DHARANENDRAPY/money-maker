@@ -38,10 +38,12 @@ class PlacePaperTradeRequest(BaseModel):
 
 
 # In-memory paper trading portfolio store (persists during backend session)
+DEFAULT_PAPER_CAPITAL = 10000000.0  # ₹1 Crore (10,000,000 INR)
+
 class PaperPortfolioStore:
     def __init__(self):
-        self.starting_cash = 10000.0
-        self.available_cash = 10000.0
+        self.starting_cash = DEFAULT_PAPER_CAPITAL
+        self.available_cash = DEFAULT_PAPER_CAPITAL
         self.positions: Dict[str, Dict[str, Any]] = {}
         self.closed_trades: List[Dict[str, Any]] = []
         self._load_from_db()
@@ -106,7 +108,7 @@ class PaperPortfolioStore:
         finally:
             db.close()
 
-    def reset(self, initial_cash: float = 10000.0):
+    def reset(self, initial_cash: float = DEFAULT_PAPER_CAPITAL):
         db = SessionLocal()
         try:
             db.query(TradeJournalRecord).delete()
@@ -198,6 +200,32 @@ class PaperPortfolioStore:
         gross_loss = abs(sum(t.get("realized_pnl", 0) for t in losing_trades))
         profit_factor = round(gross_profit / max(gross_loss, 0.01), 2) if gross_loss > 0 else (gross_profit if gross_profit > 0 else 1.0)
 
+        # Day Profit & Loss Breakdown (IST today)
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
+        today_date_str = now_ist.strftime("%Y-%m-%d")
+
+        today_closed = []
+        for t in self.closed_trades:
+            exit_time_str = t.get("exit_time", "")
+            if exit_time_str:
+                try:
+                    # Parse ISO string
+                    dt = datetime.datetime.fromisoformat(exit_time_str.replace("Z", "+00:00"))
+                    ist_dt = dt + datetime.timedelta(hours=5, minutes=30)
+                    if ist_dt.strftime("%Y-%m-%d") == today_date_str:
+                        today_closed.append(t)
+                except Exception:
+                    pass
+
+        today_profit = sum(t.get("realized_pnl", 0) for t in today_closed if t.get("realized_pnl", 0) > 0)
+        today_loss = abs(sum(t.get("realized_pnl", 0) for t in today_closed if t.get("realized_pnl", 0) < 0))
+        today_realized_pnl = today_profit - today_loss
+        today_total_pnl = today_realized_pnl + total_unrealized_pnl
+
+        # Total charges across all closed trades
+        total_charges = sum(t.get("charges", 0) for t in self.closed_trades)
+
         total_portfolio_value = round(self.available_cash + margin_locked + total_unrealized_pnl, 2)
         total_pnl = round(total_portfolio_value - self.starting_cash, 2)
         total_pnl_pct = round((total_pnl / self.starting_cash) * 100.0, 2)
@@ -211,6 +239,13 @@ class PaperPortfolioStore:
             "total_pnl_pct": total_pnl_pct,
             "realized_pnl": round(realized_pnl, 2),
             "unrealized_pnl": round(total_unrealized_pnl, 2),
+            "today_profit": round(today_profit, 2),
+            "today_loss": round(today_loss, 2),
+            "today_realized_pnl": round(today_realized_pnl, 2),
+            "today_total_pnl": round(today_total_pnl, 2),
+            "gross_profit": round(gross_profit, 2),
+            "gross_loss": round(gross_loss, 2),
+            "total_charges": round(total_charges, 2),
             "open_positions": open_list,
             "open_count": len(open_list),
             "closed_trades": self.closed_trades[::-1],  # newest first
@@ -284,6 +319,35 @@ class PaperPortfolioStore:
                 r.total_charges = total_charges
                 r.net_pnl = net_pnl
                 r.notes = closed_record["exit_reason"]
+                db.commit()
+
+            # Also sync with AITradeTransactionRecord if this was an AI trade
+            from sqlalchemy import or_, and_
+            from app.models.all_models import AITradeTransactionRecord
+            ai_tx = db.query(AITradeTransactionRecord).filter(
+                or_(
+                    AITradeTransactionRecord.position_id == str(pos_id),
+                    and_(
+                        AITradeTransactionRecord.symbol == pos["symbol"],
+                        AITradeTransactionRecord.status == "OPEN"
+                    )
+                )
+            ).first()
+            if ai_tx:
+                ai_tx.exit_time = datetime.datetime.now(datetime.timezone.utc)
+                ai_tx.exit_price = closed_record["exit_price"]
+                ai_tx.gross_pnl = gross_pnl
+                ai_tx.net_pnl = net_pnl
+                ai_tx.pnl_pct = pnl_pct
+                ai_tx.total_charges = total_charges
+                ai_tx.is_win = (net_pnl > 0)
+                ai_tx.exit_reason = exit_reason
+                if "TARGET" in exit_reason.upper():
+                    ai_tx.status = "PROFIT_BOOKED"
+                elif "STOP" in exit_reason.upper():
+                    ai_tx.status = "STOP_LOSS_HIT"
+                else:
+                    ai_tx.status = "CLOSED"
                 db.commit()
         except Exception as e:
             print(f"Error saving close to DB: {e}")

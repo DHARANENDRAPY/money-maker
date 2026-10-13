@@ -162,3 +162,49 @@ class RecommendationHistoryRecord(Base):
     telegram_sent = Column(Boolean, default=False)
     telegram_sent_at = Column(DateTime, nullable=True)
 
+
+class AITradeTransactionRecord(Base):
+    """
+    Dedicated persistent transaction log for all automated trades executed by the AI.
+    Stores complete setup features and outcome metrics for future model retraining and accuracy analytics.
+    """
+    __tablename__ = "ai_trade_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trade_id = Column(String(64), unique=True, index=True)
+    position_id = Column(String(64), index=True, nullable=True)
+    symbol = Column(String(32), index=True)
+    direction = Column(String(16), default="LONG")  # "LONG" or "SHORT"
+    trade_type = Column(String(32), default="INTRADAY")  # Strictly "INTRADAY"
+
+    entry_time = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    exit_time = Column(DateTime, nullable=True)
+
+    entry_price = Column(Float)
+    target_price = Column(Float)
+    stop_loss_price = Column(Float)
+    exit_price = Column(Float, nullable=True)
+    quantity = Column(Integer, default=1)
+
+    # Performance
+    gross_pnl = Column(Float, default=0.0)
+    net_pnl = Column(Float, default=0.0)
+    pnl_pct = Column(Float, default=0.0)
+    total_charges = Column(Float, default=0.0)
+    status = Column(String(32), default="OPEN")  # "OPEN", "PROFIT_BOOKED", "STOP_LOSS_HIT", "SQUAREOFF"
+    is_win = Column(Boolean, nullable=True)
+    exit_reason = Column(String(128), nullable=True)
+
+    # AI Quality Metrics at time of order
+    strategy = Column(String(64), nullable=True)
+    ml_probability = Column(Float, nullable=True)
+    conviction_score = Column(Float, nullable=True)
+    risk_reward_ratio = Column(Float, nullable=True)
+    rvol = Column(Float, nullable=True)
+    market_regime = Column(String(32), nullable=True)
+    supporting_factors = Column(JSON, default=list)
+
+    # Flag for whether this record has been exported or used in ML training
+    trained_in_ml = Column(Boolean, default=False)
+
+
