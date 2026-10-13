@@ -136,7 +136,7 @@ class PaperPortfolioStore:
         for pos_id, pos in list(self.positions.items()):
             sym = pos["symbol"]
             quote = quotes.get(sym)
-            curr_price = quote.ltp if quote else pos["entry_price"]
+            curr_price = float(quote.ltp) if (quote and getattr(quote, 'ltp', 0) > 0) else float(pos["entry_price"])
             pos["current_price"] = round(curr_price, 2)
 
             is_long = pos["direction"] == "LONG"
@@ -149,10 +149,10 @@ class PaperPortfolioStore:
             # Calculate floating P&L
             if is_long:
                 unrealized = (curr_price - entry) * qty
-                unrealized_pct = ((curr_price - entry) / entry) * 100.0
+                unrealized_pct = ((curr_price - entry) / entry) * 100.0 if entry > 0 else 0.0
             else:
                 unrealized = (entry - curr_price) * qty
-                unrealized_pct = ((entry - curr_price) / entry) * 100.0
+                unrealized_pct = ((entry - curr_price) / entry) * 100.0 if entry > 0 else 0.0
 
             pos["unrealized_pnl"] = round(unrealized, 2)
             pos["unrealized_pct"] = round(unrealized_pct, 2)
@@ -171,7 +171,9 @@ class PaperPortfolioStore:
                     auto_exit_reason = "INTRADAY_MARKET_CLOSE_SQUAREOFF"
 
             # 2. Target 1 & Stop Loss Price Triggers (STRICTLY FOR INTRADAY ONLY; NEVER AUTO-SELL DELIVERY)
-            if not auto_exit_reason and pos.get("trade_type") == "INTRADAY":
+            # Must have an active, verified positive live price to avoid false trigger on 0.0 offline quote
+            has_live_price = bool(quote and getattr(quote, 'ltp', 0) > 0)
+            if not auto_exit_reason and pos.get("trade_type") == "INTRADAY" and has_live_price:
                 if is_long:
                     if curr_price >= t1 and not pos.get("t1_booked"):
                         auto_exit_reason = "TARGET_1_HIT"

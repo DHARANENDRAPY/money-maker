@@ -180,7 +180,7 @@ async def market_tick_broadcaster():
                 provider = market_state.active_provider
                 indices = provider.get_indices()
                 nifty = indices.get("NIFTY 50")
-                banknifty = indices.get("BANKNIFTY")
+                banknifty = indices.get("BANKNIFTY") or indices.get("BANK NIFTY")
                 breadth = provider.get_market_breadth()
                 quotes = provider.get_all_quotes()
 

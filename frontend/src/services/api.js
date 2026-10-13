@@ -212,6 +212,23 @@ export async function broadcastDeliveryToTelegram(payload = {}) {
   return res.json();
 }
 
+// --- Options Intelligence & Micro-Budget Radar APIs ---
+export async function fetchOptionsRadar(budget = 1000) {
+  const res = await fetch(`${BASE_URL}/options/radar?budget=${budget}`);
+  if (!res.ok) throw new Error(`Options Radar fetch failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function broadcastOptionsToTelegram(payload = {}) {
+  const res = await fetch(`${BASE_URL}/options/broadcast-telegram`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error(`Options broadcast failed: ${res.statusText}`);
+  return res.json();
+}
+
 // --- Paper Trading Simulator APIs ---
 export async function fetchPaperPortfolio() {
   const res = await fetch(`${BASE_URL}/paper/portfolio`);

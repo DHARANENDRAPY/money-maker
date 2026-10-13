@@ -158,7 +158,7 @@ def _generate_options_radar(budget: float) -> Dict[str, Any]:
     provider = market_state.active_provider
     indices = provider.get_indices()
     nifty = indices.get("NIFTY 50")
-    banknifty = indices.get("BANKNIFTY")
+    banknifty = indices.get("BANKNIFTY") or indices.get("BANK NIFTY")
 
     nifty_spot = nifty.ltp if nifty else None
     nifty_chg = nifty.change_pct if nifty else None
@@ -167,12 +167,12 @@ def _generate_options_radar(budget: float) -> Dict[str, Any]:
 
     is_live = provider.is_live_feed()
 
-    # If not connected to live data, return a clear unavailable response
-    if not is_live or nifty_spot is None or bn_spot is None:
+    # If not connected to live data or spot prices are 0, return clean unavailable response
+    if not is_live or not nifty_spot or not bn_spot or nifty_spot <= 0 or bn_spot <= 0:
         return {
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "is_live_feed": False,
-            "error": "Live Angel One connection required for Options Radar. Connect Angel One to see real option premiums.",
+            "error": "Live Angel One connection required for Options Radar. Connect Angel One in Settings to see real option premiums.",
             "nifty_spot": None,
             "banknifty_spot": None,
             "setups": []
