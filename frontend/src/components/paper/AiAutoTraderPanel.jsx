@@ -126,13 +126,13 @@ export default function AiAutoTraderPanel({ onTradeExecuted, onSwitchToHistory }
 
           <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
             Automated High-Win-Rate Execution Engine
-            <span className="text-xs font-normal text-slate-400 font-mono">
-              (Threshold: Win Rate &gt; 50% | Auto Stop-Loss Attached)
+            <span className="text-xs font-normal text-emerald-400 font-mono">
+              (Gate: AI Confidence &ge; 80% | Auto SL &amp; Breakeven Trailing)
             </span>
           </h3>
 
           <p className="text-xs text-slate-400">
-            Every 5 minutes, AI scans for high-conviction intraday setups with &gt;50% accuracy, automatically enters paper trades with stop-loss, books profit at target, and logs all data to train the model.
+            Every 5 minutes during market hours, AI scans for high-conviction intraday setups with &ge;80% AI confidence, automatically enters paper trades with stop-loss, moves stop to breakeven at 50% target, and books profit at Target 1.
           </p>
         </div>
 

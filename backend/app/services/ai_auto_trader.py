@@ -27,7 +27,8 @@ logger = logging.getLogger("ai_auto_trader")
 class AIAutoTraderService:
     def __init__(self):
         self.enabled: bool = True
-        self.min_win_rate: float = 0.58  # Must be >= 58% win rate / calibrated ML probability
+        self.min_win_rate: float = 0.52  # Must have positive statistical edge (>= 52% calibrated ML prob)
+        self.min_conviction: float = 0.80  # Strict gate: AI must be >= 80% confident (High Conviction)
         self.trade_budget_per_order: float = 2000.0  # ₹2,000 INR per paper trade
         self.interval_seconds: int = 300  # 5 minutes
         self.max_concurrent_ai_trades: int = 5
@@ -61,7 +62,7 @@ class AIAutoTraderService:
         """
         Executes a 5-minute cycle:
         1. Queries AI recommendations (strictly Intraday)
-        2. Filters only trades where ml_probability >= 0.58 (>=58% calibrated confidence)
+        2. Filters only trades where AI Conviction >= 80% (>= 0.80) and ML prob >= 52%
         3. Excludes existing open positions in the same symbol
         4. Enforces safety limits (max concurrent trades, cash balance)
         5. Executes paper trade and logs to `ai_trade_transactions` table for future ML training
@@ -72,7 +73,7 @@ class AIAutoTraderService:
         from app.routers.recommendations import get_ai_recommendations
 
         self.last_run_time = datetime.datetime.now(datetime.timezone.utc)
-        logger.info("🤖 AI 5-Min Auto-Trader scanning for high-conviction Intraday trades (>=58% win rate)...")
+        logger.info("🤖 AI 5-Min Auto-Trader scanning for high-conviction Intraday trades (>=80% AI confidence)...")
 
         # 1. Fetch fresh recommendations (Intraday scanner)
         rec_data = get_ai_recommendations(limit=10)
@@ -87,6 +88,7 @@ class AIAutoTraderService:
         for rec in top_recs:
             sym = rec.get("symbol", "").upper()
             ml_prob = rec.get("ml_probability", 0.0)
+            conviction = rec.get("conviction_score", 0.0)
             entry = rec.get("entry_price", 0.0)
             target = rec.get("target_price", 0.0)
             sl = rec.get("stop_loss", 0.0)
@@ -95,13 +97,15 @@ class AIAutoTraderService:
 
             # Strict Checks:
             # - Strictly Intraday (NO DELIVERY)
-            # - Calibrated ML probability >= 58%
+            # - High AI Conviction (>= 80% confidence)
+            # - Calibrated ML edge (>= 52% win rate)
             # - Valid prices with direction alignment:
             #   LONG: sl < entry < target; SHORT: sl > entry > target
             # - Realistic intraday target distance (<= 2.5%)
             # - Not already an open position in this stock
             direction_valid = (sl < entry < target) if direction == "LONG" else (sl > entry > target)
-            if (ml_prob >= self.min_win_rate and entry > 0 and target > 0 and sl > 0
+            if (conviction >= self.min_conviction and ml_prob >= self.min_win_rate
+                    and entry > 0 and target > 0 and sl > 0
                     and direction_valid and target_pct <= 0.025):
                 if sym not in open_symbols:
                     qualified_candidates.append(rec)

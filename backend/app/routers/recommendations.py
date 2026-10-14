@@ -23,9 +23,9 @@ _INTRA_RECS_CACHE_TTL = 15.0  # 15 seconds cache
 
 
 def _conviction_label(score: float) -> str:
-    if score >= 0.65:
+    if score >= 0.80:
         return "HIGH_CONVICTION"
-    elif score >= 0.45:
+    elif score >= 0.65:
         return "MODERATE"
     else:
         return "SPECULATIVE"
@@ -42,28 +42,57 @@ def _compute_conviction_score(
     direction: str,
 ) -> float:
     """
-    Composite conviction score (0.0 – 1.0):
-    Weights: ML probability (40%) + R:R quality (25%) + Volume (15%) + 
-             Regime alignment (10%) + Factor alignment (10%)
+    Composite AI Setup Confidence / Conviction Score (0.0 to 1.0 / 0% to 100%):
+    Evaluates total confluence across:
+    1. Base Technical Setup & Risk-Reward (30 pts)
+    2. Calibrated ML Model Statistical Edge (25 pts)
+    3. Institutional Volume Confirmation / RVOL (15 pts)
+    4. Market Regime & Sector Tailwinds (15 pts)
+    5. Multi-Indicator Technical Confluence (15 pts)
+    
+    A textbook confluent setup achieves 80% – 95% AI confidence.
+    Setups with conflicting signals or poor volume fall below 65% and are filtered out.
     """
-    # ML probability component (40%) — 0.46 baseline, 0.62+ is excellent
-    ml_score = min(1.0, max(0.0, (ml_prob - 0.46) / 0.16)) * 0.40
+    # 1. Base Setup & R:R (Target: 1.8 R:R)
+    # At 1.8 R:R, award 25 pts. Scale up to 30 pts for 2.0+ R:R.
+    rr_pts = min(30.0, max(10.0, (rr_ratio / 1.8) * 25.0))
 
-    # R:R quality component (25%) — 1.4 = baseline, 2.8 = excellent
-    rr_score = min(1.0, max(0.0, (rr_ratio - 1.4) / 1.4)) * 0.25
+    # 2. ML Probability Component (25 pts max)
+    # In quantitative equity trading, 0.50 is the neutral coin toss.
+    # Calibrated ML prob of 0.54-0.60+ represents strong statistical alpha.
+    if ml_prob >= 0.60:
+        ml_pts = 25.0
+    elif ml_prob >= 0.55:
+        ml_pts = 20.0 + ((ml_prob - 0.55) / 0.05) * 5.0
+    elif ml_prob >= 0.50:
+        ml_pts = 12.0 + ((ml_prob - 0.50) / 0.05) * 8.0
+    else:
+        ml_pts = max(0.0, (ml_prob / 0.50) * 10.0)
 
-    # Volume confirmation (15%) — RVOL > 1.0 is bullish volume
-    vol_score = min(1.0, max(0.0, (rvol - 0.9) / 1.4)) * 0.15
+    # 3. Volume Surge (15 pts max)
+    # RVOL > 1.2 indicates institutional participation
+    if rvol >= 1.5:
+        vol_pts = 15.0
+    elif rvol >= 1.2:
+        vol_pts = 12.0
+    elif rvol >= 1.0:
+        vol_pts = 8.0
+    else:
+        vol_pts = 4.0
 
-    # Regime alignment (10%)
-    regime_score = 0.10 if regime_aligned else 0.0
+    # 4. Market & Sector Alignment (15 pts max)
+    regime_pts = 10.0 if regime_aligned else 0.0
+    sector_aligned = (direction == "LONG" and sector_change_pct > 0.1) or (direction == "SHORT" and sector_change_pct < -0.1)
+    sector_pts = 5.0 if sector_aligned else (2.0 if abs(sector_change_pct) < 0.3 else 0.0)
 
-    # Factor alignment (10%)
-    factor_net = n_supporting - (n_conflicting * 2)
-    factor_score = min(1.0, max(0.0, factor_net / 3.0)) * 0.10
+    # 5. Supporting Indicator Confluence (15 pts max)
+    # Each supportive indicator (VWAP, Supertrend, EMA, MACD, etc.) adds 4 pts.
+    # Conflicting indicators heavily penalize (-8 pts).
+    confluence_pts = max(0.0, min(15.0, (n_supporting * 4.0) - (n_conflicting * 8.0)))
 
-    total = ml_score + rr_score + vol_score + regime_score + factor_score
-    return round(min(0.98, max(0.10, total)), 3)
+    raw_total = rr_pts + ml_pts + vol_pts + regime_pts + sector_pts + confluence_pts
+    score = min(0.96, max(0.20, raw_total / 100.0))
+    return round(score, 3)
 
 
 @router.get("/recommendations")
@@ -149,6 +178,10 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
                 sector_change_pct=sec_chg,
                 direction=signal.direction,
             )
+
+            # Strict AI Conviction Gate: discard low-conviction setups (< 0.65)
+            if conviction < 0.65:
+                continue
 
             # Risk amount per trade at 1% capital risk (₹1,00,000 default)
             risk_per_share = abs(signal.entry_price - signal.stop_loss)

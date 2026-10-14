@@ -46,7 +46,7 @@ const CONVICTION_CONFIG = {
 
 function ConvictionBar({ score }) {
   const pct = Math.round(score * 100);
-  const color = pct >= 70 ? 'bg-emerald-400' : pct >= 50 ? 'bg-amber-400' : 'bg-slate-500';
+  const color = pct >= 80 ? 'bg-emerald-400' : pct >= 65 ? 'bg-amber-400' : 'bg-slate-500';
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -305,11 +305,11 @@ function RecommendationCard({ rec, index, liveQuote, budget = 1000, onPaperTrade
         <div className="mt-3.5 pt-3 border-t border-slate-800/60">
           <div className="flex items-center justify-between mb-1.5 text-xs">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400 font-medium">AI Conviction Score:</span>
+              <span className="text-[11px] text-slate-400 font-medium">AI Setup Confidence:</span>
               <span className={`text-[11px] font-bold ${cfg.color}`}>{cfg.label}</span>
             </div>
             <div className="flex items-center gap-3 font-mono text-[11px]">
-              <span className="text-cyan-400">Model Win Prob: <strong>{Math.round((rec.ml_probability || 0.65) * 100)}%</strong></span>
+              <span className="text-cyan-400" title="Statistical historical win rate from calibrated ML model on 1:1.8 Risk:Reward">Historical Edge: <strong>{Math.round((rec.ml_probability || 0.65) * 100)}% Win</strong></span>
               <span className="text-slate-400">R:R <strong>1:{rec.risk_reward_ratio?.toFixed(1)}</strong></span>
             </div>
           </div>
