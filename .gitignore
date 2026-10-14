@@ -1,5 +1,7 @@
 .env
 *.db
+*.db-wal
+*.db-shm
 trade_intelligence.db
 node_modules/
 __pycache__/
