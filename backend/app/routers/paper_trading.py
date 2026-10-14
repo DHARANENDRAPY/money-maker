@@ -111,7 +111,10 @@ class PaperPortfolioStore:
     def reset(self, initial_cash: float = DEFAULT_PAPER_CAPITAL):
         db = SessionLocal()
         try:
+            from app.models.all_models import RecommendationHistoryRecord, AITradeTransactionRecord
             db.query(TradeJournalRecord).delete()
+            db.query(RecommendationHistoryRecord).delete()
+            db.query(AITradeTransactionRecord).delete()
             db.commit()
         except Exception as e:
             print(f"Error clearing DB: {e}")

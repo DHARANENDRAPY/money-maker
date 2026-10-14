@@ -19,14 +19,16 @@ import {
   CheckCircle,
   XCircle,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  RotateCcw
 } from 'lucide-react';
 import { 
   fetchRecommendationsHistory, 
   fetchPaperTradingHistory, 
   fetchAiTradesHistory, 
   fetchAiTradesAccuracy,
-  retrainFromAiTrades 
+  retrainFromAiTrades,
+  resetPaperPortfolio
 } from '../../services/api';
 import { useMarket } from '../../context/MarketContext';
 import { Bot } from 'lucide-react';
@@ -42,7 +44,24 @@ export default function HistoryPage() {
   const [aiAccuracy, setAiAccuracy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+
+  const handleResetAllHistory = async () => {
+    if (!window.confirm("Are you sure you want to purge all old historical recommendations and paper trading records to start fresh with the new institutional prediction technique?")) {
+      return;
+    }
+    try {
+      setIsResetting(true);
+      await resetPaperPortfolio(10000000);
+      showToast?.("All old records purged. Starting fresh with new prediction models!", "success");
+      await loadHistory(false);
+    } catch (err) {
+      showToast?.("Failed to purge records: " + err.message, "error");
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   const loadHistory = useCallback(async (isSilent = false) => {
     try {
@@ -154,7 +173,7 @@ export default function HistoryPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               onClick={() => loadHistory(false)}
               disabled={isRefreshing}
@@ -162,6 +181,15 @@ export default function HistoryPage() {
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
               <span>Refresh Log</span>
+            </button>
+            <button
+              onClick={handleResetAllHistory}
+              disabled={isResetting}
+              className="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold border border-rose-500/30 flex items-center gap-1.5 transition-all"
+              title="Clears all old trade logs and recommendations to start fresh with new predictions"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
+              <span>{isResetting ? 'Purging...' : 'Purge Old Data & Start Fresh'}</span>
             </button>
           </div>
         </div>
