@@ -1,10 +1,17 @@
-// Base backend URL for cloud hosting (Netlify -> Render)
-const RAW_BACKEND = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '');
+// Default production backend hosted on Render
+const DEFAULT_PROD_BACKEND = 'https://money-maker-cgp2.onrender.com';
+
+// In development, empty string uses the Vite dev proxy configured in vite.config.js (http://127.0.0.1:8000)
+// In production (Netlify), defaults to the live Render backend if VITE_BACKEND_URL is not explicitly set
+const RAW_BACKEND = (
+  import.meta.env.VITE_BACKEND_URL || 
+  (import.meta.env.DEV ? '' : DEFAULT_PROD_BACKEND)
+).replace(/\/+$/, '');
 
 // API base URL — falls back to local Vite dev proxy if not provided
 const BASE_URL = RAW_BACKEND ? `${RAW_BACKEND}/api` : '/api';
 
-// WebSocket URL
+// WebSocket URL: uses wss:// on Render in production, ws:// in local dev
 const WS_URL = RAW_BACKEND
   ? `${RAW_BACKEND.replace(/^http/, 'ws')}/ws`
   : `${typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws'}://${typeof window !== 'undefined' ? window.location.host : 'localhost:8000'}/ws`;
