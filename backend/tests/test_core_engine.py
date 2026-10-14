@@ -133,3 +133,50 @@ def test_signal_clamping_realistic_intraday():
             assert (sig.entry_price - sig.target_price) / sig.entry_price <= 0.03
         assert sig.risk_reward_ratio >= 1.2
 
+def test_vwap_bands_and_opening_gap():
+    df = generate_sample_candles(50, 1500.0)
+    enriched = enrich_candles_with_indicators(df)
+    
+    assert "vwap_upper_1" in enriched.columns
+    assert "vwap_upper_2" in enriched.columns
+    assert "vwap_lower_2" in enriched.columns
+    assert "vwap_zscore" in enriched.columns
+    
+    last = enriched.iloc[-1]
+    assert last['vwap_lower_2'] <= last['vwap_lower_1'] <= last['vwap'] <= last['vwap_upper_1'] <= last['vwap_upper_2']
+    
+    from app.engine.indicators import detect_opening_gap
+    gap = detect_opening_gap(df)
+    assert "gap_type" in gap
+    assert "gap_pct" in gap
+
+def test_institutional_factors_evaluation():
+    # Factor 13: Order book depth
+    f13 = FactorEngine.evaluate_factor_13_order_book_depth(depth_ratio=2.5, direction="LONG")
+    assert f13.status == "SUPPORTIVE"
+    assert f13.score > 0.5
+
+    f13_trap = FactorEngine.evaluate_factor_13_order_book_depth(depth_ratio=0.4, direction="LONG")
+    assert f13_trap.status == "CONFLICTING"
+
+    # Factor 14: VWAP bands overextension
+    f14 = FactorEngine.evaluate_factor_14_vwap_bands(
+        current_price=1050.0, vwap=1000.0, vwap_upper_2=1030.0, vwap_lower_2=970.0, direction="LONG"
+    )
+    assert f14.status == "CONFLICTING"  # Overextended above +2σ
+
+    # Factor 15: Daily trend alignment
+    f15 = FactorEngine.evaluate_factor_15_daily_trend_alignment(
+        current_price=1050.0, daily_ema50=1000.0, daily_ema200=950.0, direction="LONG"
+    )
+    assert f15.status == "SUPPORTIVE"
+
+    # Factor 16: Opening gap
+    f16 = FactorEngine.evaluate_factor_16_opening_gap("GAP_AND_GO_BULLISH", 1.2, "LONG")
+    assert f16.status == "SUPPORTIVE"
+
+    # Factor 17: India VIX
+    f17 = FactorEngine.evaluate_factor_17_india_vix(15.0, "MOMENTUM")
+    assert f17.status == "SUPPORTIVE"
+
+

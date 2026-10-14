@@ -316,6 +316,22 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
                 # Relative volume estimate compared to normal 5-min rate
                 rvol = round(max(0.5, min(4.5, vol / (info.get("base_price", 1000) * 50) if info.get("base_price", 0) > 0 else 1.2)), 2)
                 
+                tot_buy = int(item.get("totBuyQuan", 0) or item.get("totalBuyQuantity", 0) or 0)
+                tot_sell = int(item.get("totSellQuan", 0) or item.get("totalSellQuantity", 0) or 0)
+                depth_ratio = round(tot_buy / max(tot_sell, 1), 2) if tot_sell > 0 else 1.0
+
+                prev_close = float(item.get("close", ltp) or ltp)
+                gap_pct = round(((open_p - prev_close) / prev_close) * 100.0, 2) if prev_close > 0 else 0.0
+                if gap_pct >= 0.6:
+                    gap_type = "GAP_AND_GO_BULLISH" if ltp >= open_p else "GAP_FADE_BEARISH"
+                elif gap_pct <= -0.6:
+                    gap_type = "GAP_AND_GO_BEARISH" if ltp <= open_p else "GAP_FADE_BULLISH"
+                else:
+                    gap_type = "FLAT_OPEN"
+
+                vwap_std_est = max(ltp * 0.003, 0.05)
+                vwap_zscore = round((ltp - vwap) / vwap_std_est, 2)
+
                 quote_obj = Quote(
                     symbol=sym,
                     name=info["name"],
@@ -332,7 +348,17 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
                     rel_volume=rvol,
                     sector=info["sector"],
                     last_update=datetime.datetime.utcnow().strftime("%H:%M:%S IST (Live)"),
-                    data_source="ANGEL_ONE_SMARTAPI"
+                    data_source="ANGEL_ONE_SMARTAPI",
+                    buy_qty=tot_buy,
+                    sell_qty=tot_sell,
+                    depth_ratio=depth_ratio,
+                    gap_pct=gap_pct,
+                    gap_type=gap_type,
+                    vwap_zscore=vwap_zscore,
+                    vwap_upper_2std=round(vwap + 2.0 * vwap_std_est, 2),
+                    vwap_lower_2std=round(vwap - 2.0 * vwap_std_est, 2),
+                    india_vix=round(getattr(self, "_cached_india_vix", 14.2), 1),
+                    daily_trend="BULLISH" if ltp >= vwap else "BEARISH"
                 )
                 self._batch_quotes_cache[sym] = quote_obj
                 

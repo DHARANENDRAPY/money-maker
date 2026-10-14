@@ -625,3 +625,230 @@ class FactorEngine:
             },
             uncertainty_level="LOW"
         )
+
+    @staticmethod
+    def evaluate_factor_13_order_book_depth(
+        depth_ratio: float,
+        direction: str = "LONG"
+    ) -> FactorEvaluation:
+        """Factor 13: Live Order Book Depth Imbalance (Buy vs Sell Volume)."""
+        score = 0.0
+        if direction.upper() == "LONG":
+            if depth_ratio >= 2.0:
+                score = 0.8
+                summary = f"Strong Buyer Depth Imbalance ({depth_ratio:.1f}x buyers vs sellers). Heavy institutional absorption."
+            elif depth_ratio >= 1.2:
+                score = 0.4
+                summary = f"Favorable Buyer Depth ({depth_ratio:.1f}x buyers vs sellers)."
+            elif depth_ratio < 0.7:
+                score = -0.7
+                summary = f"Severe Seller Overhang (Sellers outnumber buyers by {1/max(depth_ratio, 0.01):.1f}x). High bull trap risk."
+            else:
+                score = 0.0
+                summary = f"Balanced order book depth ({depth_ratio:.1f}x)."
+        else:
+            if depth_ratio <= 0.5:
+                score = 0.8
+                summary = f"Strong Seller Depth Imbalance ({1/max(depth_ratio, 0.01):.1f}x sellers vs buyers). Heavy selling pressure."
+            elif depth_ratio <= 0.8:
+                score = 0.4
+                summary = f"Favorable Seller Depth ({1/max(depth_ratio, 0.01):.1f}x sellers vs buyers)."
+            elif depth_ratio > 1.5:
+                score = -0.7
+                summary = f"Severe Buyer Support Wall ({depth_ratio:.1f}x buyers vs sellers). High bear trap risk."
+            else:
+                score = 0.0
+                summary = f"Balanced order book depth ({depth_ratio:.1f}x)."
+
+        status = "SUPPORTIVE" if score > 0.25 else ("CONFLICTING" if score < -0.25 else "NEUTRAL")
+        return FactorEvaluation(
+            factor_id=13,
+            name="Order Book Depth Imbalance",
+            category="Order Flow & Microstructure",
+            score=round(score, 2),
+            status=status,
+            weight_desc="High",
+            summary=summary,
+            details={"depth_ratio": round(depth_ratio, 2), "direction": direction},
+            uncertainty_level="LOW"
+        )
+
+    @staticmethod
+    def evaluate_factor_14_vwap_bands(
+        current_price: float,
+        vwap: float,
+        vwap_upper_2: float,
+        vwap_lower_2: float,
+        direction: str = "LONG"
+    ) -> FactorEvaluation:
+        """Factor 14: VWAP Standard Deviation Bands & Overextension."""
+        score = 0.0
+        if vwap <= 0:
+            score = 0.0
+            summary = "VWAP data unavailable."
+        elif direction.upper() == "LONG":
+            if current_price > vwap_upper_2:
+                score = -0.8
+                summary = f"Price is overextended above VWAP +2σ (₹{current_price:,.2f} vs +2σ ₹{vwap_upper_2:,.2f}). High mean-reversion risk."
+            elif current_price >= vwap:
+                score = 0.6
+                summary = f"Price holding healthy accumulation zone between VWAP (₹{vwap:,.2f}) and +2σ band (₹{vwap_upper_2:,.2f})."
+            else:
+                score = -0.3
+                summary = f"Price is below intraday VWAP (₹{vwap:,.2f})."
+        else:
+            if current_price < vwap_lower_2:
+                score = -0.8
+                summary = f"Price is overextended below VWAP -2σ (₹{current_price:,.2f} vs -2σ ₹{vwap_lower_2:,.2f}). High short-squeeze snapback risk."
+            elif current_price <= vwap:
+                score = 0.6
+                summary = f"Price holding bearish distribution zone between VWAP (₹{vwap:,.2f}) and -2σ band (₹{vwap_lower_2:,.2f})."
+            else:
+                score = -0.3
+                summary = f"Price is above intraday VWAP (₹{vwap:,.2f})."
+
+        status = "SUPPORTIVE" if score > 0.25 else ("CONFLICTING" if score < -0.25 else "NEUTRAL")
+        return FactorEvaluation(
+            factor_id=14,
+            name="VWAP Standard Deviation Bands",
+            category="Volatility & Mean Reversion",
+            score=round(score, 2),
+            status=status,
+            weight_desc="High",
+            summary=summary,
+            details={
+                "current_price": current_price,
+                "vwap": vwap,
+                "upper_2std": vwap_upper_2,
+                "lower_2std": vwap_lower_2
+            },
+            uncertainty_level="LOW"
+        )
+
+    @staticmethod
+    def evaluate_factor_15_daily_trend_alignment(
+        current_price: float,
+        daily_ema50: float,
+        daily_ema200: float,
+        direction: str = "LONG"
+    ) -> FactorEvaluation:
+        """Factor 15: Multi-Timeframe Daily Trend Alignment."""
+        if daily_ema50 <= 0:
+            return FactorEvaluation(
+                factor_id=15, name="Multi-Timeframe Daily Trend", category="Macro Alignment",
+                score=0.0, status="NEUTRAL", weight_desc="High", summary="Daily EMA data neutral",
+                details={}, uncertainty_level="MEDIUM"
+            )
+        
+        above_50 = current_price > daily_ema50
+        above_200 = current_price > daily_ema200 if daily_ema200 > 0 else above_50
+
+        if direction.upper() == "LONG":
+            if above_50 and above_200:
+                score = 0.8
+                summary = "Full Multi-Timeframe Bullish Alignment (Above Daily 50 & 200 EMAs)."
+            elif above_50:
+                score = 0.4
+                summary = "Moderately Bullish Daily Trend (Above Daily 50 EMA)."
+            else:
+                score = -0.8
+                summary = "Counter-Trend Warning! Taking LONG into Daily Downtrend (Below Daily 50 EMA)."
+        else:
+            if not above_50 and not above_200:
+                score = 0.8
+                summary = "Full Multi-Timeframe Bearish Alignment (Below Daily 50 & 200 EMAs)."
+            elif not above_50:
+                score = 0.4
+                summary = "Moderately Bearish Daily Trend (Below Daily 50 EMA)."
+            else:
+                score = -0.8
+                summary = "Counter-Trend Warning! Shorting into Strong Daily Uptrend (Above Daily 50 EMA)."
+
+        status = "SUPPORTIVE" if score > 0.25 else ("CONFLICTING" if score < -0.25 else "NEUTRAL")
+        return FactorEvaluation(
+            factor_id=15,
+            name="Multi-Timeframe Daily Trend",
+            category="Macro Alignment",
+            score=round(score, 2),
+            status=status,
+            weight_desc="High",
+            summary=summary,
+            details={"above_ema50": above_50, "above_ema200": above_200},
+            uncertainty_level="LOW"
+        )
+
+    @staticmethod
+    def evaluate_factor_16_opening_gap(
+        gap_type: str,
+        gap_pct: float,
+        direction: str = "LONG"
+    ) -> FactorEvaluation:
+        """Factor 16: Opening Gap Physics & Classification."""
+        score = 0.0
+        is_long = direction.upper() == "LONG"
+
+        if gap_type == "GAP_AND_GO_BULLISH":
+            score = 0.8 if is_long else -0.8
+            summary = f"Bullish Gap & Go (+{gap_pct:.2f}%). Morning momentum holding above opening range."
+        elif gap_type == "GAP_AND_GO_BEARISH":
+            score = 0.8 if not is_long else -0.8
+            summary = f"Bearish Gap & Go ({gap_pct:.2f}%). Breakdown momentum holding below opening range."
+        elif gap_type == "GAP_FADE_BEARISH":
+            score = 0.6 if not is_long else -0.6
+            summary = f"Exhaustion Gap Fade ({gap_pct:+.2f}%). Morning gap failed, falling back to fill gap."
+        elif gap_type == "GAP_FADE_BULLISH":
+            score = 0.6 if is_long else -0.6
+            summary = f"Oversold Gap Fill Bounce ({gap_pct:+.2f}%). Selling exhausted, filling gap upward."
+        else:
+            score = 0.0
+            summary = f"Flat Open ({gap_pct:+.2f}%). No major gap momentum."
+
+        status = "SUPPORTIVE" if score > 0.25 else ("CONFLICTING" if score < -0.25 else "NEUTRAL")
+        return FactorEvaluation(
+            factor_id=16,
+            name="Opening Gap Momentum",
+            category="Price Action Physics",
+            score=round(score, 2),
+            status=status,
+            weight_desc="Medium-High",
+            summary=summary,
+            details={"gap_type": gap_type, "gap_pct": gap_pct},
+            uncertainty_level="LOW"
+        )
+
+    @staticmethod
+    def evaluate_factor_17_india_vix(
+        india_vix: float = 14.5,
+        strategy_type: str = "MOMENTUM"
+    ) -> FactorEvaluation:
+        """Factor 17: India VIX Volatility Regime."""
+        score = 0.0
+        if india_vix < 12.0:
+            regime = "LOW_VOLATILITY_CHOP"
+            score = 0.6 if "REVERSION" in strategy_type.upper() else -0.4
+            summary = f"India VIX is Low ({india_vix:.1f}). Breakout setups fail frequently; mean reversion favored."
+        elif india_vix <= 18.0:
+            regime = "OPTIMAL_TRENDING"
+            score = 0.8
+            summary = f"India VIX is in the Sweet Spot ({india_vix:.1f}). Ideal trending and breakout conditions."
+        elif india_vix <= 22.0:
+            regime = "ELEVATED_VOLATILITY"
+            score = 0.2
+            summary = f"India VIX is Elevated ({india_vix:.1f}). Wider intraday swings; protect stops."
+        else:
+            regime = "HIGH_VOLATILITY_DANGER"
+            score = -0.6
+            summary = f"India VIX is High ({india_vix:.1f}). Whipsaw risk; reduce trade sizes."
+
+        status = "SUPPORTIVE" if score > 0.25 else ("CONFLICTING" if score < -0.25 else "NEUTRAL")
+        return FactorEvaluation(
+            factor_id=17,
+            name="India VIX Volatility Regime",
+            category="Macro & Market Context",
+            score=round(score, 2),
+            status=status,
+            weight_desc="High",
+            summary=summary,
+            details={"india_vix": india_vix, "vix_regime": regime},
+            uncertainty_level="LOW"
+        )

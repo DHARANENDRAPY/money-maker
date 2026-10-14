@@ -31,6 +31,16 @@ class Quote(BaseModel):
     sector: str
     last_update: str
     data_source: str  # "DEMO" or "ANGEL_ONE"
+    buy_qty: Optional[int] = 0
+    sell_qty: Optional[int] = 0
+    depth_ratio: Optional[float] = 1.0
+    gap_pct: Optional[float] = 0.0
+    gap_type: Optional[str] = "FLAT_OPEN"
+    vwap_zscore: Optional[float] = 0.0
+    vwap_upper_2std: Optional[float] = None
+    vwap_lower_2std: Optional[float] = None
+    india_vix: Optional[float] = 14.5
+    daily_trend: Optional[str] = "NEUTRAL"
 
 class IndexSummary(BaseModel):
     symbol: str

@@ -150,6 +150,7 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
                 market_breadth_ad=breadth.advance_decline_ratio,
                 ml_model=market_state.ml_pipeline.calibrated_model,
                 ml_model_version=market_state.model_version,
+                quote=quote,
             )
 
             if signal is None:

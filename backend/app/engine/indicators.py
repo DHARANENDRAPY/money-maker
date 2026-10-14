@@ -197,13 +197,154 @@ def detect_key_levels(df: pd.DataFrame, opening_range_bars: int = 3) -> Dict[str
         "support_2": round(s2, 2)
     }
 
+def calculate_vwap_bands(df: pd.DataFrame) -> Dict[str, pd.Series]:
+    """
+    Calculates Volume-Weighted Standard Deviation Bands around intraday VWAP.
+    Variance = sum(vol * (typical_price - VWAP)^2) / sum(vol)
+    StdDev = sqrt(Variance)
+    Upper/Lower Bands = VWAP +/- (multiplier * StdDev)
+    """
+    if df.empty or 'volume' not in df.columns:
+        empty_s = pd.Series(index=df.index, dtype=float)
+        return {
+            "vwap": empty_s, "std": empty_s,
+            "upper_1": empty_s, "lower_1": empty_s,
+            "upper_2": empty_s, "lower_2": empty_s,
+            "upper_3": empty_s, "lower_3": empty_s,
+            "zscore": empty_s,
+        }
+    
+    typical_price = (df['high'] + df['low'] + df['close']) / 3.0
+    vol = df['volume']
+    vwap = calculate_vwap(df)
+    
+    # Session-aware cumulative variance
+    sq_diff = (typical_price - vwap) ** 2
+    vol_sq_diff = vol * sq_diff
+    
+    if isinstance(df.index, pd.DatetimeIndex):
+        dates = df.index.date
+        cum_vol_sq_diff = vol_sq_diff.groupby(dates).cumsum()
+        cum_vol = vol.groupby(dates).cumsum()
+    elif 'timestamp' in df.columns:
+        ts = pd.to_datetime(df['timestamp'], errors='coerce')
+        if not ts.isna().all():
+            dates = ts.dt.date
+            cum_vol_sq_diff = vol_sq_diff.groupby(dates).cumsum()
+            cum_vol = vol.groupby(dates).cumsum()
+        else:
+            cum_vol_sq_diff = vol_sq_diff.cumsum()
+            cum_vol = vol.cumsum()
+    else:
+        cum_vol_sq_diff = vol_sq_diff.cumsum()
+        cum_vol = vol.cumsum()
+        
+    variance = cum_vol_sq_diff / cum_vol.replace(0, np.nan)
+    vwap_std = np.sqrt(variance.clip(lower=0.0)).ffill().bfill()
+    # Fallback standard deviation if 0
+    vwap_std = vwap_std.replace(0, np.nan).fillna(typical_price * 0.003).round(2)
+    
+    zscore = ((df['close'] - vwap) / vwap_std.replace(0, 1.0)).round(2)
+    
+    return {
+        "vwap": vwap,
+        "std": vwap_std,
+        "upper_1": (vwap + (1.0 * vwap_std)).round(2),
+        "lower_1": (vwap - (1.0 * vwap_std)).round(2),
+        "upper_2": (vwap + (2.0 * vwap_std)).round(2),
+        "lower_2": (vwap - (2.0 * vwap_std)).round(2),
+        "upper_3": (vwap + (3.0 * vwap_std)).round(2),
+        "lower_3": (vwap - (3.0 * vwap_std)).round(2),
+        "zscore": zscore,
+    }
+
+
+def detect_opening_gap(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Detects Opening Gap physics relative to previous day close and ATR:
+    Classifications:
+    - GAP_AND_GO_BULLISH: Gap up >= 0.6%, price holding above opening candle low
+    - GAP_AND_GO_BEARISH: Gap down <= -0.6%, price holding below opening candle high
+    - GAP_FADE_BEARISH: Gap up broke back below opening low (gap fill underway)
+    - GAP_FADE_BULLISH: Gap down broke back above opening high (gap fill bounce)
+    - FLAT_OPEN: Gap < 0.4%
+    """
+    if df.empty or len(df) < 3:
+        return {"gap_pct": 0.0, "gap_type": "FLAT_OPEN", "prev_close": 0.0, "open_price": 0.0}
+
+    # Extract today's session vs previous session
+    if isinstance(df.index, pd.DatetimeIndex):
+        latest_date = df.index[-1].date()
+        today_df = df[df.index.date == latest_date]
+        prev_df = df[df.index.date < latest_date]
+    elif 'timestamp' in df.columns:
+        ts = pd.to_datetime(df['timestamp'], errors='coerce')
+        valid_ts = ts.dropna()
+        if not valid_ts.empty:
+            latest_date = valid_ts.iloc[-1].date()
+            today_df = df[ts.dt.date == latest_date]
+            prev_df = df[ts.dt.date < latest_date]
+        else:
+            today_df = df.tail(min(len(df), 75))
+            prev_df = pd.DataFrame()
+    else:
+        today_df = df.tail(min(len(df), 75))
+        prev_df = pd.DataFrame()
+
+    if today_df.empty:
+        today_df = df
+    
+    today_open = float(today_df['open'].iloc[0])
+    curr_price = float(today_df['close'].iloc[-1])
+    open_bar_high = float(today_df['high'].iloc[0])
+    open_bar_low = float(today_df['low'].iloc[0])
+
+    prev_close = float(prev_df['close'].iloc[-1]) if not prev_df.empty else float(today_df['open'].iloc[0])
+    if prev_close <= 0:
+        return {"gap_pct": 0.0, "gap_type": "FLAT_OPEN", "prev_close": today_open, "open_price": today_open}
+
+    gap_pct = round(((today_open - prev_close) / prev_close) * 100.0, 2)
+
+    # Gap Classification
+    if gap_pct >= 0.6:
+        if curr_price >= open_bar_low:
+            gap_type = "GAP_AND_GO_BULLISH"
+        else:
+            gap_type = "GAP_FADE_BEARISH"
+    elif gap_pct <= -0.6:
+        if curr_price <= open_bar_high:
+            gap_type = "GAP_AND_GO_BEARISH"
+        else:
+            gap_type = "GAP_FADE_BULLISH"
+    else:
+        gap_type = "FLAT_OPEN"
+
+    return {
+        "gap_pct": gap_pct,
+        "gap_type": gap_type,
+        "prev_close": round(prev_close, 2),
+        "open_price": round(today_open, 2),
+        "curr_price": round(curr_price, 2)
+    }
+
+
 def enrich_candles_with_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Enriches OHLCV DataFrame with core indicators."""
+    """Enriches OHLCV DataFrame with core indicators including VWAP standard deviation bands."""
     res = df.copy()
     if res.empty:
         return res
         
-    res['vwap'] = calculate_vwap(res)
+    vwap_bands = calculate_vwap_bands(res)
+    res['vwap'] = vwap_bands['vwap']
+    res['vwap_std'] = vwap_bands['std']
+    res['vwap_upper_1'] = vwap_bands['upper_1']
+    res['vwap_lower_1'] = vwap_bands['lower_1']
+    res['vwap_upper_2'] = vwap_bands['upper_2']
+    res['vwap_lower_2'] = vwap_bands['lower_2']
+    res['vwap_upper_3'] = vwap_bands['upper_3']
+    res['vwap_lower_3'] = vwap_bands['lower_3']
+    res['vwap_zscore'] = vwap_bands['zscore']
+
     res['ema9'] = calculate_ema(res['close'], 9)
     res['ema21'] = calculate_ema(res['close'], 21)
     res['ema50'] = calculate_ema(res['close'], 50)

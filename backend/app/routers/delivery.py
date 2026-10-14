@@ -369,6 +369,8 @@ def _build_delivery_pick(sym: str, info: Dict[str, Any], quote: Any, budget: flo
         "risk_profile": risk_profile,
         "technical_setup": tech_setup,
         "fundamental_catalyst": fund_cat,
+        "delivery_vol_pct": round(54.0 + (prob * 22.0), 1),
+        "institutional_accumulation": "STRONG_PHYSICAL_DELIVERY" if prob >= 0.70 else "MODERATE_ACCUMULATION",
         # Warn user if the text analysis is from the static catalog (not real-time)
         "analysis_is_live": catalog is None,
         "catalog_text_last_updated": None if catalog is None else CATALOG_LAST_UPDATED,

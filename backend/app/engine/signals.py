@@ -28,7 +28,9 @@ class SignalGenerator:
         market_breadth_ad: float,
         news_items: List[Dict[str, Any]] = None,
         ml_model: Any = None,
-        ml_model_version: str = "v1.0-gbdt"
+        ml_model_version: str = "v1.0-gbdt",
+        quote: Optional[Any] = None,
+        daily_df: Optional[pd.DataFrame] = None,
     ) -> Optional[SignalItem]:
         """
         Evaluates candles and context to produce a candidate signal or 'NO_TRADE'.
@@ -265,6 +267,62 @@ class SignalGenerator:
             conflicting_factors.append(f"Sector {sector} is lagging ({sector_change_pct:+.2f}%)")
         elif direction == "SHORT" and sector_change_pct > 0.5:
             conflicting_factors.append(f"Sector {sector} is leading ({sector_change_pct:+.2f}%)")
+
+        # Factor Guardrail 1: VWAP Standard Deviation Overextension Check
+        vwap_std = float(last.get('vwap_std', current_price * 0.003))
+        if direction == "LONG" and current_price > (vwap + 2.3 * vwap_std):
+            # Severely extended above VWAP +2.3σ -> block buying at peak resistance
+            return None
+        elif direction == "SHORT" and current_price < (vwap - 2.3 * vwap_std):
+            # Severely extended below VWAP -2.3σ -> block shorting at exhaustion support
+            return None
+        elif direction == "LONG" and current_price > (vwap + 1.8 * vwap_std):
+            conflicting_factors.append("Extended near VWAP +2σ Band")
+        elif direction == "SHORT" and current_price < (vwap - 1.8 * vwap_std):
+            conflicting_factors.append("Extended near VWAP -2σ Band")
+
+        # Factor Guardrail 2: Order Book Depth Imbalance (Buyer vs Seller Pressure)
+        if quote is not None:
+            depth_ratio = float(getattr(quote, 'depth_ratio', 1.0) or 1.0)
+            if direction == "LONG":
+                if depth_ratio >= 1.5:
+                    supporting_factors.append(f"Buyer Depth Imbalance ({depth_ratio:.1f}x buyers)")
+                elif depth_ratio < 0.6:
+                    if "ORB" in strategy or "Breakout" in strategy:
+                        return None  # Severe seller overhang -> reject bull trap
+                    conflicting_factors.append(f"Seller Depth Overhang ({1/max(depth_ratio, 0.01):.1f}x sellers)")
+            elif direction == "SHORT":
+                if depth_ratio <= 0.65:
+                    supporting_factors.append(f"Seller Depth Imbalance ({1/max(depth_ratio, 0.01):.1f}x sellers)")
+                elif depth_ratio > 1.6:
+                    if "ORB" in strategy or "Breakdown" in strategy:
+                        return None  # Heavy buyer wall -> reject bear trap
+                    conflicting_factors.append(f"Buyer Support Wall ({depth_ratio:.1f}x buyers)")
+
+        # Factor Guardrail 3: Opening Gap Physics
+        from app.engine.indicators import detect_opening_gap
+        gap_res = detect_opening_gap(df)
+        gap_type = gap_res.get("gap_type", "FLAT_OPEN")
+        gap_pct = gap_res.get("gap_pct", 0.0)
+        if gap_type == "GAP_AND_GO_BULLISH" and direction == "LONG":
+            supporting_factors.append(f"Gap & Go Bullish (+{gap_pct:.1f}%)")
+        elif gap_type == "GAP_FADE_BEARISH" and direction == "SHORT":
+            supporting_factors.append(f"Exhaustion Gap Fade ({gap_pct:+.1f}%)")
+        elif gap_type == "GAP_AND_GO_BEARISH" and direction == "LONG":
+            conflicting_factors.append(f"Counter to Bearish Gap Momentum ({gap_pct:.1f}%)")
+
+        # Factor Guardrail 4: Multi-Timeframe Daily Trend Alignment
+        if daily_df is not None and len(daily_df) >= 20:
+            d_closes = daily_df['close']
+            d_ema50 = float(d_closes.ewm(span=min(len(d_closes), 50), adjust=False).mean().iloc[-1])
+            if direction == "LONG" and current_price < d_ema50 * 0.96:
+                return None  # Severe daily downtrend -> reject counter-trend long
+            elif direction == "SHORT" and current_price > d_ema50 * 1.04:
+                return None  # Strong daily uptrend -> reject counter-trend short
+            elif direction == "LONG" and current_price > d_ema50:
+                supporting_factors.append("Above Daily 50 EMA")
+            elif direction == "SHORT" and current_price < d_ema50:
+                supporting_factors.append("Below Daily 50 EMA")
             
         # ML Probability Estimation using the SAME feature set the model was trained on
         ml_prob = None
