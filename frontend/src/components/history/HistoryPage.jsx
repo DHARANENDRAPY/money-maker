@@ -136,8 +136,16 @@ export default function HistoryPage() {
   const formatDate = (isoStr) => {
     if (!isoStr) return '--';
     try {
-      const d = new Date(isoStr);
+      let s = String(isoStr).trim();
+      // If the ISO string doesn't have a timezone specifier ('Z' or +HH:MM / -HH:MM),
+      // append 'Z' so JavaScript treats it as UTC, avoiding local-time misinterpretation
+      if (!s.endsWith('Z') && !s.includes('+') && !/[-+]\d{2}:\d{2}$/.test(s)) {
+        s = s.replace(' ', 'T') + 'Z';
+      }
+      const d = new Date(s);
+      if (isNaN(d.getTime())) return isoStr;
       return d.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
         day: '2-digit',
         month: 'short',
         year: 'numeric',

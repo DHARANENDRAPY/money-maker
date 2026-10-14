@@ -116,7 +116,16 @@ export default function MarketNewsPage() {
                   {item.source}
                 </span>
                 <span className="text-[10px] text-slate-400 font-mono">
-                  {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} IST
+                  {(() => {
+                    try {
+                      let s = String(item.timestamp || '').trim();
+                      if (!s.endsWith('Z') && !s.includes('+') && !/[-+]\d{2}:\d{2}$/.test(s)) s = s.replace(' ', 'T') + 'Z';
+                      const d = new Date(s);
+                      return isNaN(d.getTime()) ? item.timestamp : d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) + ' IST';
+                    } catch {
+                      return item.timestamp;
+                    }
+                  })()}
                 </span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
                   {item.category}

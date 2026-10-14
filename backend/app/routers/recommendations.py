@@ -331,13 +331,27 @@ def get_recommendations_history(
 
         results = []
         for r in records:
+            ts_str = ""
+            if r.timestamp:
+                ts_iso = r.timestamp.isoformat()
+                if not ts_iso.endswith("Z") and "+" not in ts_iso and "-" not in ts_iso[-6:]:
+                    ts_iso += "Z"
+                ts_str = ts_iso
+
+            tg_str = None
+            if r.telegram_sent_at:
+                tg_iso = r.telegram_sent_at.isoformat()
+                if not tg_iso.endswith("Z") and "+" not in tg_iso and "-" not in tg_iso[-6:]:
+                    tg_iso += "Z"
+                tg_str = tg_iso
+
             results.append({
                 "id": r.id,
                 "rec_id": r.rec_id,
                 "symbol": r.symbol,
                 "name": r.name,
                 "sector": r.sector,
-                "timestamp": r.timestamp.isoformat() if r.timestamp else "",
+                "timestamp": ts_str,
                 "trade_type": r.trade_type,
                 "direction": r.direction,
                 "strategy": r.strategy,
@@ -354,7 +368,7 @@ def get_recommendations_history(
                 "reason": r.reason,
                 "supporting_catalysts": r.supporting_catalysts or [],
                 "telegram_sent": r.telegram_sent,
-                "telegram_sent_at": r.telegram_sent_at.isoformat() if r.telegram_sent_at else None
+                "telegram_sent_at": tg_str
             })
 
         return {

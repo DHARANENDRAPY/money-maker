@@ -122,7 +122,16 @@ export default function AlertDrawer() {
                 )}
 
                 <div className="mt-2 text-[10px] text-slate-500 font-mono">
-                  {new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  {(() => {
+                    try {
+                      let s = String(a.timestamp || '').trim();
+                      if (!s.endsWith('Z') && !s.includes('+') && !/[-+]\d{2}:\d{2}$/.test(s)) s = s.replace(' ', 'T') + 'Z';
+                      const d = new Date(s);
+                      return isNaN(d.getTime()) ? a.timestamp : d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                    } catch {
+                      return a.timestamp;
+                    }
+                  })()}
                 </div>
               </div>
             ))
