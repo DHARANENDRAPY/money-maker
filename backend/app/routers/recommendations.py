@@ -19,7 +19,7 @@ router = APIRouter()
 
 _intra_recs_cache = {}
 _intra_recs_cache_time = None
-_INTRA_RECS_CACHE_TTL = 15.0  # 15 seconds cache
+_INTRA_RECS_CACHE_TTL = 45.0  # 45 seconds cache for instant response
 
 
 def _conviction_label(score: float) -> str:
@@ -120,17 +120,30 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
     market_regime = breadth.market_regime
 
     recommendations = []
+    all_quotes = provider.get_all_quotes()
 
-    for sym, info in NSE_UNIVERSE.items():
+    # Prioritize stocks with active volume / momentum for responsive sub-second scans
+    sorted_universe = sorted(
+        NSE_UNIVERSE.items(),
+        key=lambda x: (
+            all_quotes[x[0]].rel_volume if x[0] in all_quotes else 0.0,
+            abs(all_quotes[x[0]].change_pct) if x[0] in all_quotes else 0.0
+        ),
+        reverse=True
+    )
+    scan_universe = sorted_universe[:18]
+
+    for sym, info in scan_universe:
         try:
+            quote = all_quotes.get(sym) or provider.get_quote(sym)
+            if quote is None or quote.ltp <= 0:
+                continue
+
             df = provider.get_candles(sym, "5m", 75)
             if df.empty or len(df) < 20:
                 continue
 
             enriched = enrich_candles_with_indicators(df)
-            quote = provider.get_quote(sym)
-            if quote is None:
-                continue
 
             sec_perf = next(
                 (s for s in provider.get_sector_performance() if s.sector == info["sector"]),
