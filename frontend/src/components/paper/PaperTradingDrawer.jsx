@@ -157,6 +157,13 @@ export default function PaperTradingDrawer() {
                   const isLong = pos.direction === 'LONG';
                   const posProfit = (pos.unrealized_pnl || 0) >= 0;
                   const isClosing = closingId === pos.position_id;
+                  const posPct = pos.unrealized_pct != null
+                    ? pos.unrealized_pct
+                    : (pos.unrealized_pnl_pct != null
+                        ? pos.unrealized_pnl_pct
+                        : (pos.entry_price > 0 && pos.current_price
+                            ? ((pos.current_price - pos.entry_price) / pos.entry_price * 100 * (pos.direction === 'SHORT' ? -1 : 1))
+                            : 0));
 
                   return (
                     <div
@@ -187,7 +194,7 @@ export default function PaperTradingDrawer() {
                             {posProfit ? '+' : ''}₹{pos.unrealized_pnl?.toLocaleString('en-IN')}
                           </div>
                           <div className={`text-[10px] ${posProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            ({posProfit ? '+' : ''}{pos.unrealized_pct}%)
+                            ({posProfit ? '+' : ''}{posPct.toFixed(2)}%)
                           </div>
                         </div>
                       </div>

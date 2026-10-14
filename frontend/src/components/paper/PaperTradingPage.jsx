@@ -178,8 +178,17 @@ export default function PaperTradingPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {p.open_positions.map((pos) => {
-              const posPnL = pos.unrealized_pnl || 0;
-              const posPnLPct = pos.unrealized_pnl_pct || 0;
+              const posPnL = pos.unrealized_pnl != null
+                ? pos.unrealized_pnl
+                : (pos.current_price && pos.entry_price ? (pos.direction === 'SHORT' ? (pos.entry_price - pos.current_price) : (pos.current_price - pos.entry_price)) * (pos.shares || 1) : 0);
+              
+              const posPnLPct = pos.unrealized_pct != null
+                ? pos.unrealized_pct
+                : (pos.unrealized_pnl_pct != null
+                    ? pos.unrealized_pnl_pct
+                    : (pos.entry_price > 0 && pos.current_price
+                        ? ((pos.current_price - pos.entry_price) / pos.entry_price * 100 * (pos.direction === 'SHORT' ? -1 : 1))
+                        : 0));
               const isWin = posPnL >= 0;
               const isClosing = closingId === pos.position_id;
 

@@ -73,6 +73,7 @@ class PaperPortfolioStore:
                     "current_price": r.actual_entry or r.planned_entry,
                     "unrealized_pnl": 0.0,
                     "unrealized_pct": 0.0,
+                    "unrealized_pnl_pct": 0.0,
                     "opened_at": r.entry_time.isoformat() + "Z" if r.entry_time else datetime.datetime.utcnow().isoformat() + "Z",
                     "t1_booked": False
                 }
@@ -168,6 +169,7 @@ class PaperPortfolioStore:
 
             pos["unrealized_pnl"] = round(unrealized, 2)
             pos["unrealized_pct"] = round(unrealized_pct, 2)
+            pos["unrealized_pnl_pct"] = round(unrealized_pct, 2)
             total_unrealized_pnl += unrealized
             margin_locked += pos["margin_used"]
 
@@ -489,6 +491,7 @@ def place_paper_trade(req: PlacePaperTradeRequest) -> Dict[str, Any]:
         "current_price": round(entry, 2),
         "unrealized_pnl": 0.0,
         "unrealized_pct": 0.0,
+        "unrealized_pnl_pct": 0.0,
         "opened_at": datetime.datetime.utcnow().isoformat() + "Z",
         "t1_booked": False
     }
