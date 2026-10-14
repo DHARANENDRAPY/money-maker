@@ -210,10 +210,10 @@ export default function AiAutoTraderPanel({ onTradeExecuted, onSwitchToHistory }
         <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800">
           <div className="text-[10px] text-slate-400 uppercase font-semibold">Min Threshold</div>
           <div className="text-base font-bold text-purple-300 mt-0.5">
-            &gt; 50% ML
+            &ge; 80% AI
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">
-            Only &gt;50% win probability
+            AI Confluence &amp; ML &ge;52%
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Tuple
 import pandas as pd
 import numpy as np
@@ -52,6 +52,7 @@ class SignalGenerator:
         levels = detect_key_levels(df)
         orb_high = levels.get("orb_high", current_price)
         orb_low = levels.get("orb_low", current_price)
+        orb_formed = levels.get("orb_formed", True)
         
         strategy = None
         direction = "NO_TRADE"
@@ -77,8 +78,8 @@ class SignalGenerator:
             supertrend_dir = 1
             supertrend_prev = 1
 
-        # Setup 1: Opening Range Breakout (ORB) Long
-        if current_price > orb_high and prev['close'] <= orb_high and rvol > 1.2 and current_price > vwap:
+        # Setup 1: Opening Range Breakout (ORB) Long (requires 15m range to be fully formed)
+        if orb_formed and current_price > orb_high and prev['close'] <= orb_high and rvol > 1.2 and current_price > vwap:
             strategy = "15m ORB Breakout"
             direction = "LONG"
             entry = round(current_price, 2)
@@ -86,8 +87,8 @@ class SignalGenerator:
             target = round(entry + (1.8 * abs(entry - stop_loss)), 2)
             supporting_factors.extend(["15m High Breakout", "RVOL > 1.2", "Above VWAP"])
 
-        # Setup 2: Opening Range Breakdown (ORB) Short
-        elif current_price < orb_low and prev['close'] >= orb_low and rvol > 1.2 and current_price < vwap:
+        # Setup 2: Opening Range Breakdown (ORB) Short (requires 15m range to be fully formed)
+        elif orb_formed and current_price < orb_low and prev['close'] >= orb_low and rvol > 1.2 and current_price < vwap:
             strategy = "15m ORB Breakdown"
             direction = "SHORT"
             entry = round(current_price, 2)
@@ -412,7 +413,7 @@ class SignalGenerator:
             base = max(min(base, 0.72), 0.30)  # Cap at 0.72 — never fake high confidence
             ml_prob = round(base, 2)
             
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expiry = now + timedelta(minutes=30)
         
         signal_id = f"SIG-{symbol}-{now.strftime('%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
@@ -450,7 +451,7 @@ class SignalGenerator:
         confirmed -> completed (target reached or stop loss hit)
         candidate -> expired / invalidated
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         event_type = None
         
         if signal.status == "candidate":

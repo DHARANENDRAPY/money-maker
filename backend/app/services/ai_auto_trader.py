@@ -275,36 +275,43 @@ ai_auto_trader = AIAutoTraderService()
 async def ai_auto_trader_loop():
     """
     Background asyncio daemon:
-    Runs every 5 minutes (300s):
-    1. Triggers portfolio quote update (checks Target 1 profit book & Stop Loss hit)
-    2. Synchronizes closed AI trades into the dedicated database
-    3. Runs AI intraday trade scanner for win rate > 50% setups and pushes qualified trades into paper trading
+    1. Real-Time Position Monitor: Checks open positions every 3 seconds for Target 1, Stop Loss,
+       and Breakeven Trailing Stop triggers.
+    2. Synchronizes closed AI trades into dedicated database.
+    3. 5-Minute Setup Scanner: Runs AI intraday trade scan every 300s during market hours.
     """
-    logger.info("Starting AI 5-Minute Auto-Trader daemon loop...")
-    await asyncio.sleep(20)  # Initial grace period for engine warmup
+    logger.info("Starting AI Auto-Trader daemon loop (continuous SL/Target monitor + 5-min trade scanner)...")
+    await asyncio.sleep(10)  # Initial grace period for engine warmup
+    last_scan_time = 0.0
 
     while True:
         try:
-            # 1. Update live quotes and trigger auto Target/SL execution on open positions
-            try:
-                portfolio.get_summary()
-                ai_auto_trader.sync_closed_positions()
-            except Exception as e:
-                logger.warning(f"Error in portfolio auto-exit check: {e}")
+            import time
+            now_ts = time.time()
 
-            # 2. Check market hours and execute 5-minute trade scan
-            if ai_auto_trader.enabled and ai_auto_trader.is_market_hours():
+            # 1. Real-Time Monitor: Update quotes & trigger SL/TP on open positions
+            if portfolio.positions:
                 try:
-                    ai_auto_trader.scan_and_execute_trades()
+                    portfolio.get_summary()
+                    ai_auto_trader.sync_closed_positions()
                 except Exception as e:
-                    logger.error(f"Error executing AI 5-min trade scan: {e}")
+                    logger.warning(f"Error in portfolio real-time auto-exit check: {e}")
 
-            # Sleep for exactly 5 minutes (300 seconds)
-            await asyncio.sleep(ai_auto_trader.interval_seconds)
+            # 2. Check 5-minute scan cycle
+            if (now_ts - last_scan_time) >= ai_auto_trader.interval_seconds:
+                if ai_auto_trader.enabled and ai_auto_trader.is_market_hours():
+                    try:
+                        ai_auto_trader.scan_and_execute_trades()
+                    except Exception as e:
+                        logger.error(f"Error executing AI 5-min trade scan: {e}")
+                last_scan_time = now_ts
+
+            # Responsive 3-second sleep between position health checks
+            await asyncio.sleep(3)
 
         except asyncio.CancelledError:
             logger.info("AI Auto-Trader loop cancelled.")
             break
         except Exception as err:
             logger.error(f"Unexpected error in ai_auto_trader_loop: {err}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(10)

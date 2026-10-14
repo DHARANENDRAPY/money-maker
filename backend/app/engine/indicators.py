@@ -190,6 +190,7 @@ def detect_key_levels(df: pd.DataFrame, opening_range_bars: int = 3) -> Dict[str
         "day_low": round(day_low, 2),
         "orb_high": round(opening_range_high, 2),
         "orb_low": round(opening_range_low, 2),
+        "orb_formed": len(today_df) >= opening_range_bars,
         "pivot": round(pp, 2),
         "resistance_1": round(r1, 2),
         "support_1": round(s1, 2),

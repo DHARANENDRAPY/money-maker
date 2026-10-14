@@ -111,10 +111,18 @@ class PaperPortfolioStore:
     def reset(self, initial_cash: float = DEFAULT_PAPER_CAPITAL):
         db = SessionLocal()
         try:
-            from app.models.all_models import RecommendationHistoryRecord, AITradeTransactionRecord
+            from app.models.all_models import (
+                TradeJournalRecord,
+                RecommendationHistoryRecord,
+                AITradeTransactionRecord,
+                SignalRecord,
+                AlertRecord
+            )
             db.query(TradeJournalRecord).delete()
             db.query(RecommendationHistoryRecord).delete()
             db.query(AITradeTransactionRecord).delete()
+            db.query(SignalRecord).delete()
+            db.query(AlertRecord).delete()
             db.commit()
         except Exception as e:
             print(f"Error clearing DB: {e}")
@@ -125,6 +133,7 @@ class PaperPortfolioStore:
         self.available_cash = initial_cash
         self.positions.clear()
         self.closed_trades.clear()
+        market_state.active_signals.clear()
 
     def get_summary(self) -> Dict[str, Any]:
         provider = market_state.active_provider

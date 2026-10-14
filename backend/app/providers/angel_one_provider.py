@@ -287,7 +287,20 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
             resp = requests.post(url, headers=self._get_headers(), json=payload, timeout=4)
             data = resp.json()
             if not data.get("status"):
-                return
+                msg = str(data.get("message", ""))
+                err_code = str(data.get("errorcode", ""))
+                if any(x in msg.lower() for x in ["token", "session", "unauthorized"]) or err_code in ["AG8001", "AG8002", "AG8003", "AB8050"]:
+                    logger.warning(f"Angel One session expired during quotes fetch ({err_code}: {msg}). Re-authenticating...")
+                    reauth = self.authenticate()
+                    if reauth.get("success"):
+                        resp = requests.post(url, headers=self._get_headers(), json=payload, timeout=4)
+                        data = resp.json()
+                        if not data.get("status"):
+                            return
+                    else:
+                        return
+                else:
+                    return
                 
             fetched = data.get("data", {}).get("fetched", [])
             for item in fetched:
@@ -450,9 +463,25 @@ class AngelOneSmartAPIProvider(BaseDataProvider):
 
             if not data.get("status"):
                 msg = str(data.get("message", ""))
+                err_code = str(data.get("errorcode", ""))
                 if "AB8051" in msg or "limit" in msg.lower():
                     self._candle_rate_limit_until = time.time() + 25.0
-                return pd.DataFrame()
+                    return pd.DataFrame()
+                if any(x in msg.lower() for x in ["token", "session", "unauthorized"]) or err_code in ["AG8001", "AG8002", "AG8003", "AB8050"]:
+                    logger.warning(f"Angel One session expired during candle fetch ({err_code}: {msg}). Re-authenticating...")
+                    reauth = self.authenticate()
+                    if reauth.get("success"):
+                        resp = requests.post(url, headers=self._get_headers(), json=payload, timeout=2.5)
+                        try:
+                            data = resp.json()
+                            if not data.get("status"):
+                                return pd.DataFrame()
+                        except Exception:
+                            return pd.DataFrame()
+                    else:
+                        return pd.DataFrame()
+                else:
+                    return pd.DataFrame()
 
             raw = data.get("data", [])
             if not raw:

@@ -72,16 +72,21 @@ class TelegramService:
         return self.send_message(msg, parse_mode="HTML")
 
     def send_recommendation_alert(self, rec: Dict[str, Any]) -> Dict[str, Any]:
-        signal_id = rec.get("signal_id") or f"{rec.get('symbol')}-{rec.get('direction')}"
+        import html
+        import datetime
+        today_str = datetime.date.today().isoformat()
+        sym = str(rec.get("symbol", "N/A"))
+        direction = str(rec.get("direction", "LONG"))
+        strategy_raw = str(rec.get("strategy", "DEFAULT"))
+        entry_rounded = round(float(rec.get("entry_price", 0.0)), 1)
+        signal_id = f"{today_str}-{sym}-{direction}-{strategy_raw}-{entry_rounded}"
         if signal_id in self._sent_signals:
             return {"success": True, "already_sent": True}
 
         if not self.enabled or not self.bot_token or not self.chat_id:
             return {"success": False, "error": "Telegram alerts disabled or not configured."}
 
-        import html
-        import datetime
-        symbol = html.escape(str(rec.get("symbol", "N/A")))
+        symbol = html.escape(sym)
         direction = rec.get("direction", "LONG")
         dir_emoji = "🟢 <b>BUY / LONG</b>" if direction == "LONG" else "🔴 <b>SELL / SHORT</b>"
         strategy = html.escape(str(rec.get("strategy", "AI Algorithmic Setup")))
@@ -132,7 +137,9 @@ class TelegramService:
         return result
 
     def send_delivery_alert(self, pick: Dict[str, Any]) -> Dict[str, Any]:
-        pick_id = f"DELIVERY-{pick.get('symbol')}-{pick.get('horizon_code', 'SWING')}"
+        import datetime
+        today_str = datetime.date.today().isoformat()
+        pick_id = f"{today_str}-DELIVERY-{pick.get('symbol')}-{pick.get('horizon_code', 'SWING')}"
         if pick_id in self._sent_signals:
             return {"success": True, "already_sent": True}
 
