@@ -3,7 +3,8 @@ from app.models.all_models import (
     AlertRecord,
     WatchlistRecord,
     TradeJournalRecord,
-    ModelMetadataRecord
+    ModelMetadataRecord,
+    AITradeTransactionRecord
 )
 
 __all__ = [
@@ -11,5 +12,7 @@ __all__ = [
     "AlertRecord",
     "WatchlistRecord",
     "TradeJournalRecord",
-    "ModelMetadataRecord"
+    "ModelMetadataRecord",
+    "AITradeTransactionRecord"
 ]
+

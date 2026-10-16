@@ -1,0 +1,85 @@
+{
+  "model_version": "v3.2-local-data",
+  "model_type": "Ensemble(XGB+RF)+PlattCalibration",
+  "data_source": "local-5min-processed",
+  "rr_multiplier": 1.5,
+  "inference_threshold": 0.6,
+  "trained_at": "2026-10-15T11:36:20.942993Z",
+  "training_seconds": 474.5,
+  "n_features": 32,
+  "feature_names": [
+    "ret_1",
+    "ret_3",
+    "ret_5",
+    "ret_10",
+    "vwap_dist_pct",
+    "ema_spread_pct",
+    "ema9_slope",
+    "ema21_slope",
+    "rsi14_norm",
+    "rsi_momentum",
+    "atr14_pct",
+    "bb_squeeze",
+    "range_pct",
+    "rvol",
+    "vol_acceleration",
+    "macd_hist_norm",
+    "macd_cross",
+    "body_ratio",
+    "upper_wick_ratio",
+    "lower_wick_ratio",
+    "supertrend_dir",
+    "price_vs_ema50_pct",
+    "ret_high_5",
+    "ret_low_5",
+    "time_sin",
+    "time_cos",
+    "orb_dist_pct",
+    "above_vwap",
+    "session_phase",
+    "nifty_regime",
+    "nifty_momentum",
+    "nifty_volatility"
+  ],
+  "train_samples": 1129008,
+  "test_samples": 241931,
+  "high_conf_trades": 2974,
+  "optimal_threshold": 0.35,
+  "accuracy": 0.4219,
+  "precision": 0.4093,
+  "recall": 0.965,
+  "roc_auc": 0.5407,
+  "brier_score": 0.2433,
+  "log_loss": 0.6796,
+  "win_rate": 49.5,
+  "profit_factor": 1.39,
+  "expectancy_r": 0.188,
+  "max_drawdown_r": 65.72,
+  "calibration_curve": [
+    {
+      "predicted": 0.155,
+      "actual": 0.154
+    },
+    {
+      "predicted": 0.298,
+      "actual": 0.301
+    },
+    {
+      "predicted": 0.443,
+      "actual": 0.397
+    },
+    {
+      "predicted": 0.532,
+      "actual": 0.441
+    },
+    {
+      "predicted": 0.716,
+      "actual": 0.586
+    },
+    {
+      "predicted": 0.849,
+      "actual": 0.788
+    }
+  ],
+  "is_active": true
+}

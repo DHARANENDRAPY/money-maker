@@ -202,6 +202,39 @@ class AutoModelTrainingService:
             logger.warning(f"Error during daily candle sync: {e}")
             return 0
 
+    def _fetch_intraday_candles_fallback(self, symbols: list) -> Dict[str, Any]:
+        """
+        Fallback fetcher for environments without local data/processed (e.g. Render cloud containers).
+        Downloads recent 5-minute candles from market feed.
+        """
+        try:
+            import yfinance as yf
+            import pandas as pd
+            tickers = [s + ".NS" for s in symbols]
+            df_all = yf.download(tickers, period="5d", interval="5m", auto_adjust=True, progress=False)
+            if df_all.empty:
+                return {}
+            result = {}
+            for sym in symbols:
+                ticker = sym + ".NS"
+                try:
+                    if isinstance(df_all.columns, pd.MultiIndex):
+                        df = df_all.xs(ticker, axis=1, level=1)
+                    else:
+                        df = df_all
+                    df.columns = [str(c).lower() for c in df.columns]
+                    keep = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+                    df = df[keep].dropna()
+                    if len(df) >= 30:
+                        result[sym] = df
+                except Exception:
+                    continue
+            logger.info(f"Fetched fallback 5m candles for {len(result)} symbols.")
+            return result
+        except Exception as e:
+            logger.warning(f"Error fetching fallback 5m candles: {e}")
+            return {}
+
     def run_auto_train_job(self, force: bool = False, is_daily: bool = True) -> Dict[str, Any]:
         """
         Executes automated dual-model retraining (Intraday + Delivery) in the background.
@@ -256,6 +289,11 @@ class AutoModelTrainingService:
                     )
 
                     daily_data = load_local_daily(SWING_DELIVERY_STOCKS)
+                    if len(daily_data) < 5:
+                        logger.info(f"Local daily data insufficient ({len(daily_data)} symbols). Syncing from Yahoo Finance...")
+                        self.sync_daily_market_data()
+                        daily_data = load_local_daily(SWING_DELIVERY_STOCKS)
+
                     if len(daily_data) >= 5:
                         nifty_daily = load_swing_nifty()
                         regime_feats = _compute_nifty_daily_regime(nifty_daily)
@@ -269,6 +307,8 @@ class AutoModelTrainingService:
                         market_state.swing_metadata = delivery_meta
                         market_state.swing_status = f"Loaded ({delivery_meta.get('model_version', 'v2.0')} | WR={delivery_meta.get('win_rate')}%)"
                         logger.info(f"✅ Swing/Delivery model hot-swapped! Win Rate: {delivery_meta.get('win_rate')}%, PF: {delivery_meta.get('profit_factor')}x")
+                    else:
+                        logger.warning(f"Skipping delivery retraining: only {len(daily_data)} symbols available (minimum 5 required).")
                 except Exception as deliv_err:
                     logger.error(f"Error retraining delivery model: {deliv_err}", exc_info=True)
 
@@ -288,7 +328,11 @@ class AutoModelTrainingService:
                     )
 
                     intra_data = load_local_data(NSE_STOCKS)
-                    if len(intra_data) >= 5:
+                    if len(intra_data) < 5:
+                        logger.info(f"Local 5m data directory insufficient ({len(intra_data)} symbols). Fetching recent 5m market candles...")
+                        intra_data = self._fetch_intraday_candles_fallback(NSE_STOCKS[:15])
+
+                    if len(intra_data) >= 3:
                         nifty_intra = load_intra_nifty()
                         regime_intra = _compute_nifty_regime_features(nifty_intra)
                         X_i, y_i, r_i = build_dataset(intra_data, regime_intra)
@@ -303,6 +347,8 @@ class AutoModelTrainingService:
                         market_state.model_status = f"Active (Production {intraday_meta.get('model_version', 'v3.2')} | WinRate={intraday_meta.get('win_rate')}% | PF={intraday_meta.get('profit_factor')}x)"
                         market_state.model_version = intraday_meta.get("model_version", "v3.2-local-data")
                         logger.info(f"✅ Intraday model hot-swapped! Win Rate: {intraday_meta.get('win_rate')}%, PF: {intraday_meta.get('profit_factor')}x")
+                    else:
+                        logger.warning(f"Skipping intraday retraining: only {len(intra_data)} symbols available (minimum 3 required).")
                 except Exception as intra_err:
                     logger.error(f"Error retraining intraday model: {intra_err}", exc_info=True)
 
@@ -313,7 +359,7 @@ class AutoModelTrainingService:
                 logger.info("[Phase 4/4] Incorporating closed AI paper trade execution records...")
                 try:
                     from app.database import SessionLocal
-                    from app.models.ai_trade_transaction import AITradeTransactionRecord
+                    from app.models.all_models import AITradeTransactionRecord
                     db = SessionLocal()
                     try:
                         closed_trades = db.query(AITradeTransactionRecord).filter(
