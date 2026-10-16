@@ -1,15 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   PackageCheck, TrendingUp, Sparkles, Target, ArrowUpRight,
   ShieldAlert, RefreshCw, Send, CheckCircle2, Clock, Calendar,
   Wallet, DollarSign, Award, Layers, HelpCircle, ChevronRight,
-  Info, Check, Zap, Filter, Star, BarChart3, AlertCircle, Plus, PlusCircle
+  Info, Check, Zap, Filter, Star, BarChart3, AlertCircle, Plus, PlusCircle, Bot
 } from 'lucide-react';
 import { 
   fetchDeliveryRecommendations, 
   broadcastDeliveryToTelegram,
   fetchTelegramStatus,
-  placePaperTrade
+  placePaperTrade,
+  addDeliveryAutoTrade
 } from '../../services/api';
 import { useMarket } from '../../context/MarketContext';
 import { audioAlerts } from '../../utils/audioAlerts';
@@ -37,7 +38,7 @@ const PRICE_FILTERS = [
 ];
 
 export default function DeliveryPage() {
-  const { liveQuotes, showToast, setIsPaperDrawerOpen, refreshPaperPortfolio } = useMarket();
+  const { liveQuotes, showToast, setIsPaperDrawerOpen, refreshPaperPortfolio, paperPortfolio } = useMarket();
   const [budget, setBudget] = useState(1000);
   const [customBudgetInput, setCustomBudgetInput] = useState('');
   const [activeHorizon, setActiveHorizon] = useState('ALL');
@@ -50,6 +51,19 @@ export default function DeliveryPage() {
   const [sentSingle, setSentSingle] = useState({});
   const [paperBuying, setPaperBuying] = useState({});
   const [paperBought, setPaperBought] = useState({});
+  const [aiAutoTrading, setAiAutoTrading] = useState({});
+
+  // Active paper portfolio open positions map for persistent "In Portfolio" state
+  const activePaperSymbols = useMemo(() => {
+    const set = new Set();
+    const positions = paperPortfolio?.open_positions || [];
+    for (const pos of positions) {
+      if (pos.symbol) {
+        set.add(pos.symbol.toUpperCase());
+      }
+    }
+    return set;
+  }, [paperPortfolio]);
 
   const loadData = useCallback(async (isSilent = false) => {
     try {
@@ -158,6 +172,30 @@ export default function DeliveryPage() {
       showToast(`Paper buy error: ${err.message}`, 'error');
     } finally {
       setPaperBuying(prev => ({ ...prev, [symbol]: false }));
+    }
+  };
+
+  const handleAutoTradeBot = async (pick) => {
+    const symbol = pick.symbol;
+    try {
+      setAiAutoTrading(prev => ({ ...prev, [symbol]: true }));
+      const res = await addDeliveryAutoTrade({
+        symbol: pick.symbol,
+        budget: budget
+      });
+      if (res.success) {
+        setPaperBought(prev => ({ ...prev, [symbol]: true }));
+        audioAlerts.playChime('SUCCESS');
+        audioAlerts.speak(`AI Auto-Trader now actively trading delivery stock ${pick.symbol}`);
+        showToast(`🤖 AI Auto-Trader Active: #${pick.symbol} (CNC) entered with live Breakeven Trailing & Target 1 Exit!`, 'success');
+        await refreshPaperPortfolio();
+        setIsPaperDrawerOpen(true);
+      }
+    } catch (err) {
+      audioAlerts.playChime('DANGER');
+      showToast(`AI Auto-Trade error: ${err.message}`, 'error');
+    } finally {
+      setAiAutoTrading(prev => ({ ...prev, [symbol]: false }));
     }
   };
 
@@ -502,52 +540,74 @@ export default function DeliveryPage() {
                       Risk Profile: <span className="text-slate-300 font-semibold">{pick.risk_profile.replace('_', ' ')}</span>
                     </span>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handlePaperTrade(pick)}
-                        disabled={paperBuying[pick.symbol] || paperBought[pick.symbol]}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
-                          paperBought[pick.symbol]
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
-                        }`}
-                      >
-                        {paperBought[pick.symbol] ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>In Portfolio</span>
-                          </>
-                        ) : (
-                          <>
-                            <Plus className={`w-3.5 h-3.5 stroke-[2.5] ${paperBuying[pick.symbol] ? 'animate-spin' : ''}`} />
-                            <span>{paperBuying[pick.symbol] ? 'Adding...' : '+ Add to Paper Trade'}</span>
-                          </>
-                        )}
-                      </button>
+                    {(() => {
+                      const isInPaperTrade = Boolean(paperBought[pick.symbol] || activePaperSymbols.has(pick.symbol?.toUpperCase()));
+                      const isBuyingThis = Boolean(paperBuying[pick.symbol]);
+                      const isAiTradingThis = Boolean(aiAutoTrading[pick.symbol]);
+                      return (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            onClick={() => handleAutoTradeBot(pick)}
+                            disabled={isAiTradingThis || isInPaperTrade}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
+                              isInPaperTrade
+                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 cursor-default'
+                                : 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/20'
+                            }`}
+                            title={isInPaperTrade ? 'Actively managed by AI Trader' : 'Hand over to AI Auto-Trader for automated execution, breakeven trailing & Target 1 exit'}
+                          >
+                            <Bot className={`w-3.5 h-3.5 text-purple-200 ${isAiTradingThis ? 'animate-spin' : ''}`} />
+                            <span>{isAiTradingThis ? 'Auto-Trading...' : (isInPaperTrade ? '🤖 AI Managed' : '🤖 Auto-Trade (AI Bot)')}</span>
+                          </button>
 
-                      <button
-                        onClick={() => handleSendSingle(pick.symbol)}
-                        disabled={isSingleSending || isSingleSent}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                          isSingleSent
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30'
-                        }`}
-                      >
-                        {isSingleSent ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>Sent Alert</span>
-                          </>
-                        ) : (
-                          <>
-                            <Send className={`w-3.5 h-3.5 ${isSingleSending ? 'animate-pulse' : ''}`} />
-                            <span>{isSingleSending ? 'Sending...' : 'Send Alert'}</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                          <button
+                            onClick={() => handlePaperTrade(pick)}
+                            disabled={isBuyingThis || isInPaperTrade}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
+                              isInPaperTrade
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-default'
+                                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
+                            }`}
+                            title={isInPaperTrade ? 'Position is active in your virtual paper portfolio' : 'Add to virtual paper portfolio'}
+                          >
+                            {isInPaperTrade ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>In Portfolio</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className={`w-3.5 h-3.5 stroke-[2.5] ${isBuyingThis ? 'animate-spin' : ''}`} />
+                                <span>{isBuyingThis ? 'Adding...' : '+ Paper Buy'}</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => handleSendSingle(pick.symbol)}
+                            disabled={isSingleSending || isSingleSent}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                              isSingleSent
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : 'bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30'
+                            }`}
+                          >
+                            {isSingleSent ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Sent Alert</span>
+                              </>
+                            ) : (
+                              <>
+                                <Send className={`w-3.5 h-3.5 ${isSingleSending ? 'animate-pulse' : ''}`} />
+                                <span>{isSingleSending ? 'Sending...' : 'Send Alert'}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })()}
+              </div>
                 </div>
               </div>
             );

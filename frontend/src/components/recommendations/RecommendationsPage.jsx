@@ -487,7 +487,7 @@ function RecommendationCard({ rec, index, liveQuote, budget = 1000, onPaperTrade
 }
 
 export default function RecommendationsPage() {
-  const { showToast, setActiveTab, liveQuotes, uiMode, setIsPaperDrawerOpen, refreshPaperPortfolio } = useMarket();
+  const { showToast, setActiveTab, liveQuotes, uiMode, setIsPaperDrawerOpen, refreshPaperPortfolio, paperPortfolio } = useMarket();
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -497,6 +497,19 @@ export default function RecommendationsPage() {
   const [userBudget, setUserBudget] = useState(1000);
   const [paperExecuting, setPaperExecuting] = useState({});
   const [paperExecuted, setPaperExecuted] = useState({});
+
+  // Active positions from paper portfolio for persistent in-portfolio indicator
+  const activePaperKeys = useMemo(() => {
+    const set = new Set();
+    const positions = paperPortfolio?.open_positions || [];
+    for (const pos of positions) {
+      if (pos.symbol) {
+        set.add(`${pos.symbol.toUpperCase()}_${pos.direction || 'LONG'}`);
+        set.add(pos.symbol.toUpperCase());
+      }
+    }
+    return set;
+  }, [paperPortfolio]);
   
   // Model retraining state
   const [mlStatus, setMlStatus] = useState(null);
@@ -828,6 +841,11 @@ export default function RecommendationsPage() {
         <div className="space-y-4">
           {recs.map((rec, i) => {
             const key = `${rec.symbol}_${rec.direction}`;
+            const isPositionInPortfolio = Boolean(
+              paperExecuted[key] || 
+              activePaperKeys.has(key) || 
+              activePaperKeys.has(rec.symbol?.toUpperCase())
+            );
             return (
               <RecommendationCard 
                 key={rec.signal_id || rec.symbol} 
@@ -837,7 +855,7 @@ export default function RecommendationsPage() {
                 budget={userBudget}
                 onPaperTrade={handlePaperTrade}
                 isExecutingPaper={paperExecuting[key]}
-                isExecutedPaper={paperExecuted[key]}
+                isExecutedPaper={isPositionInPortfolio}
                 uiMode={uiMode}
               />
             );

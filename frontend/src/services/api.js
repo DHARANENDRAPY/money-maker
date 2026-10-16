@@ -314,5 +314,27 @@ export async function retrainFromAiTrades() {
   return res.json();
 }
 
+export async function addDeliveryAutoTrade(payload) {
+  const res = await fetch(`${BASE_URL}/ai-trader/add-delivery-trade`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Add delivery auto-trade failed: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function triggerDailyPostMarketRetrain(force = false) {
+  const res = await fetch(`${BASE_URL}/ai-trader/train-daily?force=${force}`, {
+    method: 'POST'
+  });
+  if (!res.ok) throw new Error(`Daily retrain failed: ${res.statusText}`);
+  return res.json();
+}
+
+
 
 

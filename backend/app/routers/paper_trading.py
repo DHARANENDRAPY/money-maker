@@ -69,7 +69,7 @@ class PaperPortfolioStore:
                     "allocated_budget": 1000.0,
                     "target_1": r.planned_target,
                     "target_2": r.planned_target * 1.08,
-                    "stop_loss": r.planned_stop_loss,
+                    "stop_loss": r.actual_stop_loss or r.planned_stop_loss,
                     "current_price": r.actual_entry or r.planned_entry,
                     "unrealized_pnl": 0.0,
                     "unrealized_pct": 0.0,
@@ -184,16 +184,25 @@ class PaperPortfolioStore:
                 if now_ist.weekday() < 5 and (now_ist.hour > 15 or (now_ist.hour == 15 and now_ist.minute >= 15)):
                     auto_exit_reason = "INTRADAY_MARKET_CLOSE_SQUAREOFF"
 
-            # 2. Target 1 & Stop Loss Price Triggers (STRICTLY FOR INTRADAY ONLY; NEVER AUTO-SELL DELIVERY)
+            # 2. Target 1 & Stop Loss Price Triggers (Applies to both INTRADAY and DELIVERY trades; NEVER intraday squareoff DELIVERY)
             # Must have an active, verified positive live price to avoid false trigger on 0.0 offline quote
             has_live_price = bool(quote and getattr(quote, 'ltp', 0) > 0)
-            if not auto_exit_reason and pos.get("trade_type") == "INTRADAY" and has_live_price:
+            if not auto_exit_reason and has_live_price:
                 if is_long:
                     # Breakeven Trailing: If price advances >= 50% toward Target 1, move Stop Loss to Entry
                     half_target_dist = abs(t1 - entry) * 0.5
                     if curr_price >= (entry + half_target_dist) and sl < entry:
                         pos["stop_loss"] = entry
                         sl = entry
+                        try:
+                            db_tr = SessionLocal()
+                            r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
+                            if r_tr:
+                                r_tr.actual_stop_loss = entry
+                                db_tr.commit()
+                            db_tr.close()
+                        except Exception:
+                            pass
 
                     if curr_price >= t1 and not pos.get("t1_booked"):
                         auto_exit_reason = "TARGET_1_HIT"
@@ -205,6 +214,15 @@ class PaperPortfolioStore:
                     if curr_price <= (entry - half_target_dist) and sl > entry:
                         pos["stop_loss"] = entry
                         sl = entry
+                        try:
+                            db_tr = SessionLocal()
+                            r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
+                            if r_tr:
+                                r_tr.actual_stop_loss = entry
+                                db_tr.commit()
+                            db_tr.close()
+                        except Exception:
+                            pass
 
                     if curr_price <= t1 and not pos.get("t1_booked"):
                         auto_exit_reason = "TARGET_1_HIT"
