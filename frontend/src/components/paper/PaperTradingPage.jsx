@@ -8,6 +8,29 @@ import { useMarket } from '../../context/MarketContext';
 import { closePaperPosition, resetPaperPortfolio } from '../../services/api';
 import AiAutoTraderPanel from './AiAutoTraderPanel';
 
+const renderExitReasonBadge = (reason) => {
+  if (!reason) return <span className="text-slate-400">Manual Exit</span>;
+  if (reason === 'TARGET_1_HIT') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">🎯 Target 1 Hit</span>;
+  }
+  if (reason === 'PROFIT_LOCKED_35PCT') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold">🛡️ Profit Lock (35%)</span>;
+  }
+  if (reason === 'RISK_FREE_BREAKEVEN') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">🔒 Breakeven (Zero Risk)</span>;
+  }
+  if (reason === 'STAGNATION_TIME_DECAY_EXIT') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">⏳ Stagnation Exit</span>;
+  }
+  if (reason === 'INTRADAY_MARKET_CLOSE_SQUAREOFF') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">🕒 15:15 MIS Square-Off</span>;
+  }
+  if (reason === 'STOP_LOSS_HIT') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold">🛑 Stop Loss Hit</span>;
+  }
+  return <span className="text-slate-400">{reason}</span>;
+};
+
 export default function PaperTradingPage() {
   const { 
     paperPortfolio, 
@@ -198,7 +221,7 @@ export default function PaperTradingPage() {
                   className="bg-slate-900/90 rounded-2xl border border-slate-800 hover:border-emerald-500/40 p-4 transition-all shadow-lg space-y-3 font-mono"
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-base font-bold text-white">{pos.symbol}</span>
                       <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
                         pos.direction === 'LONG' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
@@ -208,6 +231,16 @@ export default function PaperTradingPage() {
                       <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">
                         {pos.trade_type}
                       </span>
+                      {pos.trailing_status === 'PROFIT_LOCKED_35PCT' && (
+                        <span className="text-[9px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold animate-pulse">
+                          🛡️ 35% PROFIT LOCKED
+                        </span>
+                      )}
+                      {pos.trailing_status === 'RISK_FREE_BREAKEVEN' && (
+                        <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                          🔒 ZERO-RISK BREAKEVEN
+                        </span>
+                      )}
                     </div>
 
                     <div className={`text-sm font-bold ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -233,8 +266,15 @@ export default function PaperTradingPage() {
 
                   {/* Target & SL */}
                   <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="text-emerald-400">Target 1: ₹{pos.target_1?.toFixed(2)}</span>
-                    <span className="text-rose-400">Stop Loss: ₹{pos.stop_loss?.toFixed(2)}</span>
+                    <span className="text-emerald-400 font-semibold">Target 1: ₹{pos.target_1?.toFixed(2)}</span>
+                    <span className="text-rose-400 font-semibold flex items-center gap-1.5">
+                      <span>Stop Loss: ₹{pos.stop_loss?.toFixed(2)}</span>
+                      {pos.trailing_status && (
+                        <span className="text-[10px] text-cyan-300 font-semibold">
+                          ({pos.trailing_status === 'PROFIT_LOCKED_35PCT' ? 'Locked' : 'Breakeven'})
+                        </span>
+                      )}
+                    </span>
                   </div>
 
                   {/* Action */}
@@ -282,7 +322,7 @@ export default function PaperTradingPage() {
                       <td className="p-3">₹{t.entry_price?.toFixed(2)}</td>
                       <td className="p-3">₹{t.exit_price?.toFixed(2)}</td>
                       <td className="p-3">{t.shares}</td>
-                      <td className="p-3 text-slate-400">{t.exit_reason || 'Manual Exit'}</td>
+                      <td className="p-3">{renderExitReasonBadge(t.exit_reason)}</td>
                       <td className={`p-3 text-right font-bold ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {isWin ? '+' : ''}₹{pnl.toFixed(2)}
                       </td>

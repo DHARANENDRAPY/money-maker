@@ -171,8 +171,8 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
 
             ml_prob = signal.ml_probability or 0.50
 
-            # Filter out setups with poor confidence (< 0.40)
-            if ml_prob < 0.40:
+            # Filter out setups with poor statistical edge (< 0.50)
+            if ml_prob < 0.50:
                 continue
 
             # Regime alignment check
@@ -193,8 +193,8 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
                 direction=signal.direction,
             )
 
-            # Strict AI Conviction Gate: discard low-conviction setups (< 0.65)
-            if conviction < 0.65:
+            # Strict AI Conviction Gate: discard setups below 70% confidence
+            if conviction < 0.70:
                 continue
 
             # Risk amount per trade at 1% capital risk (₹1,00,000 default)

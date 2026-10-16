@@ -37,6 +37,21 @@ class PlacePaperTradeRequest(BaseModel):
     source: Optional[str] = None
 
 
+def _safe_parse_utc(ts_str: Optional[str]) -> Optional[datetime.datetime]:
+    if not ts_str:
+        return None
+    try:
+        s = ts_str.strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
 # In-memory paper trading portfolio store (persists during backend session)
 DEFAULT_PAPER_CAPITAL = 10000000.0  # ₹1 Crore (10,000,000 INR)
 
@@ -176,29 +191,60 @@ class PaperPortfolioStore:
             # Check Auto-Exit Triggers
             auto_exit_reason = None
 
-            # 1. Indian Stock Exchange 15:15 IST Intraday Auto-Square-Off (MIS rule)
+            # 1a. Stagnation / Time-Decay Auto-Exit (INTRADAY only)
+            # If open for >= 45 minutes and price hasn't moved at least 0.30% from entry, exit dead chop
             if pos.get("trade_type") == "INTRADAY":
+                opened_dt = _safe_parse_utc(pos.get("opened_at"))
+                if opened_dt:
+                    now_utc = datetime.datetime.now(datetime.timezone.utc)
+                    mins_open = (now_utc - opened_dt).total_seconds() / 60.0
+                    price_travel_pct = abs(curr_price - entry) / entry * 100.0 if entry > 0 else 0.0
+                    if mins_open >= 45.0 and price_travel_pct < 0.30:
+                        auto_exit_reason = "STAGNATION_TIME_DECAY_EXIT"
+
+            # 1b. Indian Stock Exchange 15:15 IST Intraday Auto-Square-Off (MIS rule)
+            if not auto_exit_reason and pos.get("trade_type") == "INTRADAY":
                 now_utc = datetime.datetime.now(datetime.timezone.utc)
                 now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
-                # Auto square off intraday after 15:15 IST (3:15 PM) on weekdays
+                # Auto square off intraday after 15:15 IST (3:15 PM) on weekdays (only if opened for > 30 seconds)
                 if now_ist.weekday() < 5 and (now_ist.hour > 15 or (now_ist.hour == 15 and now_ist.minute >= 15)):
-                    auto_exit_reason = "INTRADAY_MARKET_CLOSE_SQUAREOFF"
+                    opened_dt = _safe_parse_utc(pos.get("opened_at"))
+                    if opened_dt is None or (now_utc - opened_dt).total_seconds() > 30.0:
+                        auto_exit_reason = "INTRADAY_MARKET_CLOSE_SQUAREOFF"
 
             # 2. Target 1 & Stop Loss Price Triggers (Applies to both INTRADAY and DELIVERY trades; NEVER intraday squareoff DELIVERY)
             # Must have an active, verified positive live price to avoid false trigger on 0.0 offline quote
             has_live_price = bool(quote and getattr(quote, 'ltp', 0) > 0)
             if not auto_exit_reason and has_live_price:
                 if is_long:
-                    # Breakeven Trailing: If price advances >= 50% toward Target 1, move Stop Loss to Entry
-                    half_target_dist = abs(t1 - entry) * 0.5
-                    if curr_price >= (entry + half_target_dist) and sl < entry:
-                        pos["stop_loss"] = entry
-                        sl = entry
+                    # Breakeven & Profit-Lock Trailing:
+                    half_target_dist = abs(t1 - entry) * 0.45
+                    three_quarter_dist = abs(t1 - entry) * 0.75
+                    be_sl = entry  # exact breakeven
+                    profit_lock_sl = round(entry + 0.35 * (t1 - entry), 2)  # lock in 35% profit
+
+                    if curr_price >= (entry + three_quarter_dist) and sl < profit_lock_sl:
+                        pos["stop_loss"] = profit_lock_sl
+                        sl = profit_lock_sl
+                        pos["trailing_status"] = "PROFIT_LOCKED_35PCT"
                         try:
                             db_tr = SessionLocal()
                             r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
                             if r_tr:
-                                r_tr.actual_stop_loss = entry
+                                r_tr.actual_stop_loss = profit_lock_sl
+                                db_tr.commit()
+                            db_tr.close()
+                        except Exception:
+                            pass
+                    elif curr_price >= (entry + half_target_dist) and sl < be_sl:
+                        pos["stop_loss"] = be_sl
+                        sl = be_sl
+                        pos["trailing_status"] = "RISK_FREE_BREAKEVEN"
+                        try:
+                            db_tr = SessionLocal()
+                            r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
+                            if r_tr:
+                                r_tr.actual_stop_loss = be_sl
                                 db_tr.commit()
                             db_tr.close()
                         except Exception:
@@ -209,16 +255,34 @@ class PaperPortfolioStore:
                     elif curr_price <= sl:
                         auto_exit_reason = "STOP_LOSS_HIT"
                 else:
-                    # Breakeven Trailing: If price advances >= 50% toward Target 1 (short), move Stop Loss to Entry
-                    half_target_dist = abs(entry - t1) * 0.5
-                    if curr_price <= (entry - half_target_dist) and sl > entry:
-                        pos["stop_loss"] = entry
-                        sl = entry
+                    # Short direction:
+                    half_target_dist = abs(entry - t1) * 0.45
+                    three_quarter_dist = abs(entry - t1) * 0.75
+                    be_sl = entry
+                    profit_lock_sl = round(entry - 0.35 * (entry - t1), 2)
+
+                    if curr_price <= (entry - three_quarter_dist) and sl > profit_lock_sl:
+                        pos["stop_loss"] = profit_lock_sl
+                        sl = profit_lock_sl
+                        pos["trailing_status"] = "PROFIT_LOCKED_35PCT"
                         try:
                             db_tr = SessionLocal()
                             r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
                             if r_tr:
-                                r_tr.actual_stop_loss = entry
+                                r_tr.actual_stop_loss = profit_lock_sl
+                                db_tr.commit()
+                            db_tr.close()
+                        except Exception:
+                            pass
+                    elif curr_price <= (entry - half_target_dist) and sl > be_sl:
+                        pos["stop_loss"] = be_sl
+                        sl = be_sl
+                        pos["trailing_status"] = "RISK_FREE_BREAKEVEN"
+                        try:
+                            db_tr = SessionLocal()
+                            r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
+                            if r_tr:
+                                r_tr.actual_stop_loss = be_sl
                                 db_tr.commit()
                             db_tr.close()
                         except Exception:
@@ -510,7 +574,7 @@ def place_paper_trade(req: PlacePaperTradeRequest) -> Dict[str, Any]:
         "unrealized_pnl": 0.0,
         "unrealized_pct": 0.0,
         "unrealized_pnl_pct": 0.0,
-        "opened_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "opened_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "t1_booked": False
     }
 

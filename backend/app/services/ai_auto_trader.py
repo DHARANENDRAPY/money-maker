@@ -28,7 +28,7 @@ class AIAutoTraderService:
         self.enabled: bool = True
         self.enable_intraday: bool = True  # Auto-trade qualified Intraday setups
         self.enable_delivery: bool = True  # Auto-trade qualified Swing Delivery stocks
-        self.min_win_rate: float = 0.52  # Must have positive statistical edge (>= 52% calibrated ML prob)
+        self.min_win_rate: float = 0.55  # High statistical edge required (>= 55% calibrated ML prob)
         self.min_conviction: float = 0.80  # Strict gate: AI must be >= 80% confident (High Conviction)
         self.trade_budget_per_order: float = 2000.0  # ₹2,000 INR per paper intraday trade
         self.delivery_budget_per_order: float = 2000.0  # ₹2,000 INR per paper delivery trade

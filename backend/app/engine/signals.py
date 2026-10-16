@@ -312,7 +312,7 @@ class SignalGenerator:
         elif gap_type == "GAP_AND_GO_BEARISH" and direction == "LONG":
             conflicting_factors.append(f"Counter to Bearish Gap Momentum ({gap_pct:.1f}%)")
 
-        # Factor Guardrail 4: Multi-Timeframe Daily Trend Alignment
+        # Factor Guardrail 4: Multi-Timeframe Daily & 1-Hour Trend Alignment
         if daily_df is not None and len(daily_df) >= 20:
             d_closes = daily_df['close']
             d_ema50 = float(d_closes.ewm(span=min(len(d_closes), 50), adjust=False).mean().iloc[-1])
@@ -324,8 +324,81 @@ class SignalGenerator:
                 supporting_factors.append("Above Daily 50 EMA")
             elif direction == "SHORT" and current_price < d_ema50:
                 supporting_factors.append("Below Daily 50 EMA")
-            
-        # ML Probability Estimation using the SAME feature set the model was trained on
+
+        # 1-Hour Trend Consensus from intraday candles (12 x 5m bars = 60m)
+        if len(df) >= 12:
+            h_ema = float(df['close'].ewm(span=12, adjust=False).mean().iloc[-1])
+            if direction == "LONG":
+                if current_price < h_ema * 0.992:
+                    conflicting_factors.append("Counter to 1-Hour Trend (Price < 1H EMA)")
+                    if "BULLISH" not in market_regime:
+                        return None
+                elif current_price >= h_ema:
+                    supporting_factors.append("1H Higher-Timeframe Trend Bullish")
+            elif direction == "SHORT":
+                if current_price > h_ema * 1.008:
+                    conflicting_factors.append("Counter to 1-Hour Trend (Price > 1H EMA)")
+                    if "BEARISH" not in market_regime:
+                        return None
+                elif current_price <= h_ema:
+                    supporting_factors.append("1H Higher-Timeframe Trend Bearish")
+
+        # Factor Guardrail 5: Mansfield Relative Strength vs NIFTY 50
+        stock_chg = 0.0
+        if quote is not None and getattr(quote, 'change_pct', None) is not None:
+            stock_chg = float(quote.change_pct)
+        elif len(df) > 0 and 'open' in df.columns:
+            open_0 = float(df['open'].iloc[0])
+            if open_0 > 0:
+                stock_chg = round(((current_price - open_0) / open_0) * 100.0, 2)
+
+        rs_vs_nifty = round(stock_chg - nifty_change_pct, 2)
+        if direction == "LONG":
+            if rs_vs_nifty < -1.0:
+                return None  # Severe institutional laggard -> reject buying weakness
+            elif rs_vs_nifty >= 0.5:
+                supporting_factors.append(f"Institutional Outperformer (+{rs_vs_nifty:.2f}% vs NIFTY)")
+            elif rs_vs_nifty < -0.4:
+                conflicting_factors.append(f"Underperforming NIFTY ({rs_vs_nifty:+.2f}%)")
+        elif direction == "SHORT":
+            if rs_vs_nifty > 1.0:
+                return None  # Severe institutional leader -> reject shorting strength
+            elif rs_vs_nifty <= -0.5:
+                supporting_factors.append(f"Institutional Underperformer ({rs_vs_nifty:.2f}% vs NIFTY)")
+            elif rs_vs_nifty > 0.4:
+                conflicting_factors.append(f"Outperforming NIFTY (+{rs_vs_nifty:+.2f}%)")
+
+        # Factor Guardrail 6: VSA (Volume Spread Analysis) Trap Elimination
+        bar_open = float(last.get('open', current_price))
+        bar_close = float(last.get('close', current_price))
+        bar_high = float(last.get('high', current_price))
+        bar_low = float(last.get('low', current_price))
+        total_range = max(bar_high - bar_low, 0.01)
+        upper_wick = bar_high - max(bar_open, bar_close)
+        lower_wick = min(bar_open, bar_close) - bar_low
+        body = abs(bar_close - bar_open)
+        upper_wick_ratio = upper_wick / total_range
+        lower_wick_ratio = lower_wick / total_range
+        body_ratio = body / total_range
+
+        if direction == "LONG":
+            if upper_wick_ratio >= 0.40:
+                return None  # Upthrust / Bull Trap: strong upper shadow rejection
+            if rvol >= 1.5 and body_ratio < 0.20:
+                return None  # Absorption Trap: heavy volume churning with no price progress
+        elif direction == "SHORT":
+            if lower_wick_ratio >= 0.40:
+                return None  # Spring / Bear Trap: strong lower shadow rejection
+            if rvol >= 1.5 and body_ratio < 0.20:
+                return None  # Absorption Trap: heavy volume churning with no downward progress
+
+        # Factor Guardrail 7: Breakout Overextension & Chasing Prevention
+        if "ORB" in strategy or "Breakout" in strategy:
+            if direction == "LONG" and current_price > (orb_high + 1.2 * atr):
+                return None  # Chasing overextended high
+            elif direction == "SHORT" and current_price < (orb_low - 1.2 * atr):
+                return None  # Chasing overextended low
+
         ml_prob = None
         if ml_model is not None:
             try:
