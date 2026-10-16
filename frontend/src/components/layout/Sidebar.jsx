@@ -5,7 +5,8 @@ import {
   History,
   TrendingUp,
   ShieldAlert,
-  Settings
+  Settings,
+  FlaskConical
 } from 'lucide-react';
 import { useMarket } from '../../context/MarketContext';
 
@@ -13,6 +14,7 @@ const navItems = [
   { id: 'recommendations', label: 'Intraday Picks', icon: Target, badge: '⚡ MIS' },
   { id: 'delivery', label: 'Delivery & Swing', icon: PackageCheck, badge: '💎 CNC' },
   { id: 'paper', label: 'Paper Trading', icon: Wallet, badge: '🎮 Live' },
+  { id: 'backtest', label: 'Backtest Lab', icon: FlaskConical, badge: '🧪 Lab' },
   { id: 'history', label: 'All Recommendations', icon: History, badge: '📜 Vault' },
   { id: 'settings', label: 'Broker & Settings', icon: Settings, badge: '⚙️ API' },
 ];

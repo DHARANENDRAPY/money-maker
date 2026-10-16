@@ -21,10 +21,12 @@ import { fetchStockAnalysis } from '../../services/api';
 import CandlestickChart from '../charts/CandlestickChart';
 
 export default function StockAnalysisPage() {
-  const { selectedSymbol, setSelectedSymbol, watchlist, setActiveTab } = useMarket();
+  const { selectedSymbol, setSelectedSymbol, watchlist, setActiveTab, paperPortfolio } = useMarket();
   const [analysis, setAnalysis] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedFactor, setSelectedFactor] = useState(null);
+
+  const activeTrade = paperPortfolio?.open_positions?.find(p => p.symbol === selectedSymbol);
 
   const loadAnalysis = async (sym) => {
     setIsLoading(true);
@@ -164,12 +166,34 @@ export default function StockAnalysisPage() {
         </div>
       </div>
 
+      {/* Active Position Overlay Banner */}
+      {activeTrade && (
+        <div className="bg-gradient-to-r from-cyan-950/60 to-emerald-950/60 border border-cyan-500/30 rounded-xl p-3 flex flex-wrap items-center justify-between text-xs font-mono">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-white font-bold">LIVE POSITION ACTIVE:</span>
+            <span className="text-cyan-300 font-semibold">{activeTrade.direction} ({activeTrade.shares} shares @ ₹{activeTrade.entry_price?.toFixed(2)})</span>
+            {activeTrade.trailing_status && (
+              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                {activeTrade.trailing_status.replace(/_/g, ' ')}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 text-slate-300">
+            <span>T1: <strong className="text-emerald-400">₹{activeTrade.target_1?.toFixed(2)}</strong></span>
+            <span>T2: <strong className="text-amber-400">₹{activeTrade.target_2?.toFixed(2)}</strong></span>
+            <span>SL: <strong className="text-rose-400">₹{activeTrade.stop_loss?.toFixed(2)}</strong></span>
+          </div>
+        </div>
+      )}
+
       {/* Chart & Key Levels Section */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-3 space-y-3">
           <CandlestickChart
             candles={analysis?.candles || []}
             keyLevels={keyLevels}
+            activeTrade={activeTrade}
             height={360}
             showVolume={true}
             showVwap={true}

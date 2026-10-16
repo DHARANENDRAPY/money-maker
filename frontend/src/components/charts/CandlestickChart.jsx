@@ -5,6 +5,7 @@ export default function CandlestickChart({
   candles = [],
   keyLevels = null,
   signal = null,
+  activeTrade = null,
   height = 420,
   showVolume = true,
   showVwap = true,
@@ -194,8 +195,78 @@ export default function CandlestickChart({
         }
       }
 
-      // Signal Target & Stop Loss price lines
-      if (signal) {
+      // 1. Active Paper Trade Position Overlays (Real-time live position lines)
+      if (activeTrade) {
+        const entry = Number(activeTrade.entry_price);
+        const t1 = Number(activeTrade.target_1);
+        const t2 = Number(activeTrade.target_2 || (t1 * 1.02));
+        const sl = Number(activeTrade.stop_loss);
+        const trailing = activeTrade.trailing_status;
+        const shares = activeTrade.shares || 1;
+
+        if (entry) {
+          candleSeries.createPriceLine({
+            price: entry,
+            color: '#38bdf8',
+            lineWidth: 2,
+            lineStyle: 0,
+            axisLabelVisible: true,
+            title: `ENTRY: ₹${entry.toFixed(2)} (${shares} sh)`,
+          });
+        }
+
+        if (t1) {
+          candleSeries.createPriceLine({
+            price: t1,
+            color: '#10b981',
+            lineWidth: 2,
+            lineStyle: 0,
+            axisLabelVisible: true,
+            title: activeTrade.t1_booked ? `T1: ₹${t1.toFixed(2)} (BOOKED ✓)` : `T1: ₹${t1.toFixed(2)} (50% BOOK)`,
+          });
+        }
+
+        if (t2) {
+          candleSeries.createPriceLine({
+            price: t2,
+            color: '#f59e0b',
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: `T2 RUNNER: ₹${t2.toFixed(2)}`,
+          });
+        }
+
+        if (sl) {
+          let slTitle = `STOP LOSS: ₹${sl.toFixed(2)}`;
+          let slColor = '#ef4444';
+
+          if (trailing === 'PROFIT_LOCKED_35PCT') {
+            slTitle = `🛡️ 35% PROFIT LOCKED: ₹${sl.toFixed(2)}`;
+            slColor = '#06b6d4';
+          } else if (trailing === 'RISK_FREE_BREAKEVEN') {
+            slTitle = `🔒 ZERO RISK (BE): ₹${sl.toFixed(2)}`;
+            slColor = '#10b981';
+          } else if (trailing === 'T1_BOOKED_RUNNER_ACTIVE') {
+            slTitle = `🏃 RUNNER SL (BE): ₹${sl.toFixed(2)}`;
+            slColor = '#10b981';
+          } else if (trailing === 'RUNNER_PROFIT_LOCKED_T1') {
+            slTitle = `🏆 RUNNER SL (@ T1): ₹${sl.toFixed(2)}`;
+            slColor = '#10b981';
+          }
+
+          candleSeries.createPriceLine({
+            price: sl,
+            color: slColor,
+            lineWidth: 2,
+            lineStyle: trailing ? 0 : 2,
+            axisLabelVisible: true,
+            title: slTitle,
+          });
+        }
+      }
+      // 2. Setup / Signal Target & Stop Loss price lines (if no active trade is open)
+      else if (signal) {
         const t1 = signal.target_1 || signal.target_price;
         const t2 = signal.target_2;
         if (t1) {
@@ -261,7 +332,7 @@ export default function CandlestickChart({
         chartInstanceRef.current = null;
       }
     };
-  }, [candles, keyLevels, signal, height, showVolume, showVwap, showEma]);
+  }, [candles, keyLevels, signal, activeTrade, height, showVolume, showVwap, showEma]);
 
   return (
     <div className="relative w-full rounded-xl overflow-hidden border border-slate-800/80 bg-slate-950/60 shadow-lg">

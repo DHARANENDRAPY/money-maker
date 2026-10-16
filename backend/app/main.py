@@ -13,7 +13,8 @@ from app.routers import (
     recommendations_router,
     delivery_router,
     paper_trading_router,
-    ai_trader_router
+    ai_trader_router,
+    backtest_router
 )
 from app.services.market_state import market_state
 
@@ -254,6 +255,7 @@ app.include_router(recommendations_router, prefix="/api")
 app.include_router(delivery_router, prefix="/api")
 app.include_router(paper_trading_router, prefix="/api")
 app.include_router(ai_trader_router, prefix="/api")
+app.include_router(backtest_router, prefix="/api")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

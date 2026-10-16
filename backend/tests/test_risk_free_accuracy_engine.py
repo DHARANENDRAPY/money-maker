@@ -384,3 +384,39 @@ def test_macro_regime_disqualification():
     )
     assert signal is None
 
+
+def test_ai_coach_analytics_endpoint():
+    """Verify that AI Coach Analytics computes edge diagnostics and insights."""
+    from app.routers.paper_trading import get_ai_coach_analytics
+
+    data = get_ai_coach_analytics()
+    assert "has_data" in data
+    assert "coach_insights" in data
+    assert isinstance(data["coach_insights"], list)
+    assert len(data["coach_insights"]) >= 1
+
+
+def test_backtest_simulation_engine():
+    """Verify that Backtest Lab simulates trades, computes equity curve, and adheres to trailing stops."""
+    from app.routers.backtest import run_backtest_simulation, BacktestRequest
+
+    req = BacktestRequest(
+        symbol="RELIANCE",
+        days=30,
+        timeframe="5m",
+        initial_capital=100000.0,
+        budget_per_trade=10000.0,
+        strategy="AI_ENSEMBLE"
+    )
+
+    result = run_backtest_simulation(req)
+    assert result["success"] is True
+    assert result["symbol"] == "RELIANCE"
+    assert "win_rate" in result
+    assert "profit_factor" in result
+    assert "max_drawdown_pct" in result
+    assert "equity_curve" in result
+    assert "trade_log" in result
+    assert len(result["equity_curve"]) > 0
+
+

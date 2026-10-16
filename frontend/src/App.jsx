@@ -9,6 +9,7 @@ import AlertDrawer from './components/alerts/AlertDrawer';
 import RecommendationsPage from './components/recommendations/RecommendationsPage';
 import DeliveryPage from './components/delivery/DeliveryPage';
 import PaperTradingPage from './components/paper/PaperTradingPage';
+import BacktestLabPage from './components/backtest/BacktestLabPage';
 import HistoryPage from './components/history/HistoryPage';
 import SettingsPage from './components/settings/SettingsPage';
 import PaperTradingDrawer from './components/paper/PaperTradingDrawer';
@@ -59,6 +60,8 @@ function DashboardContent() {
         return <DeliveryPage />;
       case 'paper':
         return <PaperTradingPage />;
+      case 'backtest':
+        return <BacktestLabPage />;
       case 'history':
         return <HistoryPage />;
       case 'settings':

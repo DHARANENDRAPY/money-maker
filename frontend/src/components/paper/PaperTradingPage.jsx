@@ -7,6 +7,7 @@ import {
 import { useMarket } from '../../context/MarketContext';
 import { closePaperPosition, resetPaperPortfolio } from '../../services/api';
 import AiAutoTraderPanel from './AiAutoTraderPanel';
+import AiCoachPanel from './AiCoachPanel';
 
 const renderExitReasonBadge = (reason) => {
   if (!reason) return <span className="text-slate-400">Manual Exit</span>;
@@ -172,6 +173,9 @@ export default function PaperTradingPage() {
           </div>
         </div>
       </div>
+
+      {/* AI Coach & Edge Analytics Panel */}
+      <AiCoachPanel />
 
       {/* ACTIVE POSITIONS SECTION */}
       <div className="space-y-3">

@@ -277,6 +277,13 @@ export async function fetchPaperTradingHistory(limit = 100) {
   return res.json();
 }
 
+// --- AI Coach Edge Analytics API ---
+export async function fetchAiCoachAnalytics() {
+  const res = await fetch(`${BASE_URL}/paper/ai-coach-analytics`);
+  if (!res.ok) throw new Error(`AI Coach analytics fetch failed: ${res.statusText}`);
+  return res.json();
+}
+
 // --- AI Auto-Trader APIs ---
 export async function fetchAiTraderStatus() {
   const res = await fetch(`${BASE_URL}/ai-trader/status`);
@@ -340,6 +347,20 @@ export async function triggerDailyPostMarketRetrain(force = false) {
     method: 'POST'
   });
   if (!res.ok) throw new Error(`Daily retrain failed: ${res.statusText}`);
+  return res.json();
+}
+
+// --- Historical Backtest Simulation API ---
+export async function runBacktestSimulation(payload) {
+  const res = await fetch(`${BASE_URL}/backtest/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Backtest simulation failed: ${res.statusText}`);
+  }
   return res.json();
 }
 
