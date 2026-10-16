@@ -203,6 +203,54 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
             max_loss = round(qty_at_1pct * risk_per_share, 2)
             max_profit = round(qty_at_1pct * abs(signal.target_price - signal.entry_price), 2)
 
+            # Order Flow Depth & Institutional Imbalance
+            depth_ratio = float(getattr(quote, 'depth_ratio', 1.0) or 1.0)
+            buy_qty = int(getattr(quote, 'buy_qty', 0) or 0)
+            sell_qty = int(getattr(quote, 'sell_qty', 0) or 0)
+            tot_flow = buy_qty + sell_qty
+            order_flow_delta_pct = round(((buy_qty - sell_qty) / max(1, tot_flow)) * 100.0, 1) if tot_flow > 0 else 0.0
+
+            if depth_ratio >= 1.6 or order_flow_delta_pct >= 25.0:
+                inst_pressure = "HEAVY_BUYER_ACCUMULATION"
+            elif depth_ratio >= 1.2 or order_flow_delta_pct >= 8.0:
+                inst_pressure = "BUYER_PRESSURE"
+            elif depth_ratio <= 0.6 or order_flow_delta_pct <= -25.0:
+                inst_pressure = "HEAVY_SELLER_DISTRIBUTION"
+            elif depth_ratio <= 0.85 or order_flow_delta_pct <= -8.0:
+                inst_pressure = "SELLER_PRESSURE"
+            else:
+                inst_pressure = "BALANCED_ORDER_FLOW"
+
+            # 4-Pillar Explainable AI Confluence Radar
+            f_scores = getattr(signal, 'factor_scores', {}) or {}
+            mtf_score = f_scores.get('mtf_confluence', 82)
+            mtf_align = f_scores.get('mtf_alignment', 'FULL_BULLISH' if signal.direction == 'LONG' else 'FULL_BEARISH')
+            vix_mult = f_scores.get('vix_multiplier', 1.0)
+            vix_val = float(getattr(quote, 'india_vix', 14.2) or 14.2)
+
+            trend_pillar = min(98, max(50, int(mtf_score * 0.95 + (5 if regime_aligned else 0))))
+            momentum_pillar = min(96, max(50, int(ml_prob * 100 + (12 if signal.risk_reward_ratio >= 1.8 else 6))))
+            volume_pillar = min(98, max(45, int(min(1.5, rvol) / 1.5 * 45 + min(1.8, depth_ratio) / 1.8 * 45)))
+            macro_pillar = min(95, max(50, int((82 if regime_aligned else 62) + (8 if abs(sec_chg) > 0.4 else 0))))
+
+            confluence_radar = {
+                "trend_pillar": trend_pillar,
+                "momentum_pillar": momentum_pillar,
+                "volume_pillar": volume_pillar,
+                "macro_pillar": macro_pillar,
+                "composite_score": round(conviction * 100.0, 1),
+                "mtf_alignment": mtf_align,
+                "mtf_confluence_score": mtf_score,
+                "depth_ratio": depth_ratio,
+                "buy_qty": buy_qty,
+                "sell_qty": sell_qty,
+                "order_flow_delta_pct": order_flow_delta_pct,
+                "institutional_pressure": inst_pressure,
+                "india_vix": vix_val,
+                "vix_multiplier": vix_mult,
+                "vix_regime": "LOW_VOLATILITY" if vix_val < 13.0 else ("ELEVATED_VOLATILITY" if vix_val > 17.0 else "NORMAL_VOLATILITY")
+            }
+
             recommendations.append({
                 "rank": 0,  # filled after sort
                 "symbol": sym,
@@ -230,6 +278,14 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
                 "signal_id": signal.signal_id,
                 "expiry_time": signal.expiry_time,
                 "data_source": provider.get_provider_name(),
+                "order_flow": {
+                    "depth_ratio": depth_ratio,
+                    "delta_pct": order_flow_delta_pct,
+                    "pressure": inst_pressure,
+                    "buy_qty": buy_qty,
+                    "sell_qty": sell_qty
+                },
+                "confluence_radar": confluence_radar
             })
         except Exception:
             continue

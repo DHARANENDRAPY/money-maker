@@ -51,6 +51,7 @@ export default function PaperTradingPage() {
 
   const [closingId, setClosingId] = useState(null);
   const [resetting, setResetting] = useState(false);
+  const [activeToolTab, setActiveToolTab] = useState('autopilot'); // 'autopilot' | 'coach' | 'both'
 
   const handleClosePos = async (posId, symbol) => {
     try {
@@ -174,8 +175,53 @@ export default function PaperTradingPage() {
         </div>
       </div>
 
+      {/* Intelligence Sub-Navigation: Auto-Pilot Bot vs AI Coach */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveToolTab('autopilot')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold font-mono flex items-center gap-2 transition-all ${
+              activeToolTab === 'autopilot'
+                ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-600/20 border border-cyan-400/40'
+                : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Autonomous Auto-Pilot Bot</span>
+          </button>
+          <button
+            onClick={() => setActiveToolTab('coach')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold font-mono flex items-center gap-2 transition-all ${
+              activeToolTab === 'coach'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/20 border border-purple-400/40'
+                : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800'
+            }`}
+          >
+            <Award className="w-3.5 h-3.5 text-purple-300" />
+            <span>AI Quantitative Coach</span>
+          </button>
+          <button
+            onClick={() => setActiveToolTab('both')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono transition-all ${
+              activeToolTab === 'both'
+                ? 'bg-slate-800 text-white font-bold border border-slate-700'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Show Both
+          </button>
+        </div>
+      </div>
+
+      {/* Autonomous Bot Panel */}
+      {(activeToolTab === 'autopilot' || activeToolTab === 'both') && (
+        <AiAutoTraderPanel onTradeExecuted={refreshPaperPortfolio} />
+      )}
+
       {/* AI Coach & Edge Analytics Panel */}
-      <AiCoachPanel />
+      {(activeToolTab === 'coach' || activeToolTab === 'both') && (
+        <AiCoachPanel />
+      )}
 
       {/* ACTIVE POSITIONS SECTION */}
       <div className="space-y-3">

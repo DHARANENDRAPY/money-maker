@@ -364,6 +364,14 @@ export async function runBacktestSimulation(payload) {
   return res.json();
 }
 
+// --- Put-Call Ratio (PCR) & Max Pain Sentiment Tracker API ---
+export async function fetchPcrSentiment() {
+  const res = await fetch(`${BASE_URL}/market/pcr-sentiment`);
+  if (!res.ok) throw new Error(`PCR Sentiment fetch failed: ${res.statusText}`);
+  return res.json();
+}
+
+
 
 
 

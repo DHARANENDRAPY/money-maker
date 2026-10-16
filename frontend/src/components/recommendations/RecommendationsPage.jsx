@@ -314,6 +314,73 @@ function RecommendationCard({ rec, index, liveQuote, budget = 1000, onPaperTrade
             </div>
           </div>
           <ConvictionBar score={rec.conviction_score} />
+
+          {/* AI Confluence Radar & Order Flow Gauge */}
+          {rec.confluence_radar && (
+            <div className="mt-3.5 p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="text-[11px] font-bold text-slate-200">AI Confluence Radar & Order Flow</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold border ${
+                    rec.confluence_radar.institutional_pressure?.includes('BUYER')
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : rec.confluence_radar.institutional_pressure?.includes('SELLER')
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                  }`}>
+                    {rec.confluence_radar.institutional_pressure === 'HEAVY_BUYER_ACCUMULATION' ? '🌊 Heavy Buyer Wall' :
+                     rec.confluence_radar.institutional_pressure === 'BUYER_PRESSURE' ? '📈 Buyer Inflow' :
+                     rec.confluence_radar.institutional_pressure === 'HEAVY_SELLER_DISTRIBUTION' ? '⚠️ Heavy Seller Overhang' :
+                     rec.confluence_radar.institutional_pressure === 'SELLER_PRESSURE' ? '📉 Seller Pressure' : '⚖️ Balanced Flow'}
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-800/40">
+                    MTF: {rec.confluence_radar.mtf_alignment?.replace('_', ' ')}
+                  </span>
+                </div>
+              </div>
+
+              {/* 4 Pillars Mini Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
+                <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                  <div className="text-[9.5px] text-slate-400">Trend Alignment</div>
+                  <div className="text-xs font-bold text-emerald-400 mt-0.5">{rec.confluence_radar.trend_pillar}%</div>
+                  <div className="w-full bg-slate-800 h-1 rounded-full mt-1 overflow-hidden">
+                    <div className="bg-emerald-400 h-full rounded-full" style={{ width: `${rec.confluence_radar.trend_pillar}%` }} />
+                  </div>
+                </div>
+                <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                  <div className="text-[9.5px] text-slate-400">Momentum Velocity</div>
+                  <div className="text-xs font-bold text-cyan-400 mt-0.5">{rec.confluence_radar.momentum_pillar}%</div>
+                  <div className="w-full bg-slate-800 h-1 rounded-full mt-1 overflow-hidden">
+                    <div className="bg-cyan-400 h-full rounded-full" style={{ width: `${rec.confluence_radar.momentum_pillar}%` }} />
+                  </div>
+                </div>
+                <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                  <div className="text-[9.5px] text-slate-400">Order Flow & RVOL</div>
+                  <div className="text-xs font-bold text-purple-400 mt-0.5">{rec.confluence_radar.volume_pillar}%</div>
+                  <div className="w-full bg-slate-800 h-1 rounded-full mt-1 overflow-hidden">
+                    <div className="bg-purple-400 h-full rounded-full" style={{ width: `${rec.confluence_radar.volume_pillar}%` }} />
+                  </div>
+                </div>
+                <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                  <div className="text-[9.5px] text-slate-400">Macro Regime</div>
+                  <div className="text-xs font-bold text-amber-400 mt-0.5">{rec.confluence_radar.macro_pillar}%</div>
+                  <div className="w-full bg-slate-800 h-1 rounded-full mt-1 overflow-hidden">
+                    <div className="bg-amber-400 h-full rounded-full" style={{ width: `${rec.confluence_radar.macro_pillar}%` }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* VIX & Depth Sub-footer */}
+              <div className="flex flex-wrap items-center justify-between text-[10.5px] text-slate-400 font-mono pt-1 border-t border-slate-800/60">
+                <span>Depth Ratio: <strong className="text-white">{rec.confluence_radar.depth_ratio}x</strong> ({rec.confluence_radar.order_flow_delta_pct > 0 ? '+' : ''}{rec.confluence_radar.order_flow_delta_pct}% Delta)</span>
+                <span>India VIX: <strong className="text-white">{rec.confluence_radar.india_vix}</strong> · Adaptive Multiplier: <strong className="text-cyan-300">{rec.confluence_radar.vix_multiplier}x</strong></span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* DEDICATED TRADE PLAN: WHEN TO ENTER & WHEN TO EXIT */}

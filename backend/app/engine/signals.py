@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 
 from app.schemas.all_schemas import SignalItem
-from app.engine.indicators import detect_key_levels, calculate_supertrend
+from app.engine.indicators import detect_key_levels, calculate_supertrend, calculate_multi_timeframe_confluence
 from app.engine.factors import FactorEngine
 from app.ml.feature_engineering import extract_features_single_bar
 
@@ -229,23 +229,29 @@ class SignalGenerator:
         if direction == "NO_TRADE" or not strategy:
             return None
             
-        # Realistic Intraday Risk-Reward Clamping
-        # On NSE equities, 5m ATR is ~0.15-0.35% of price, daily range is ~1.0-2.0%.
-        # Intraday MIS trades require realistic Stop Loss (0.35% - 1.2% / ~1.0x ATR)
-        # and realistic Target 1 (0.8% - 2.0% / 1.5x-2.0x ATR) achievable before 15:15 IST.
-        min_sl_dist = max(entry * 0.0035, atr * 0.8)
-        max_sl_dist = min(entry * 0.015, max(atr * 1.5, entry * 0.008))
+        # Realistic Intraday Risk-Reward Clamping + India VIX Volatility Adaptor
+        # Baseline India VIX = 14.0. Low VIX (11-13) compresses ATR targets; High VIX (16-22) widens targets.
+        vix_val = 14.2
+        if quote is not None and getattr(quote, 'india_vix', None) is not None:
+            try:
+                vix_val = float(quote.india_vix)
+            except (ValueError, TypeError):
+                vix_val = 14.2
+        vix_multiplier = max(0.85, min(1.45, vix_val / 14.0))
+
+        min_sl_dist = max(entry * 0.0035, atr * 0.8 * vix_multiplier)
+        max_sl_dist = min(entry * 0.018, max(atr * 1.6 * vix_multiplier, entry * 0.009))
 
         if direction == "LONG":
             raw_risk = entry - stop_loss
-            clamped_risk = max(min_sl_dist, min(raw_risk if raw_risk > 0 else (atr * 1.0), max_sl_dist))
+            clamped_risk = max(min_sl_dist, min(raw_risk if raw_risk > 0 else (atr * 1.0 * vix_multiplier), max_sl_dist))
             stop_loss = round(entry - clamped_risk, 2)
-            target = round(entry + (clamped_risk * 1.8), 2)
+            target = round(entry + (clamped_risk * 1.8 * vix_multiplier), 2)
         elif direction == "SHORT":
             raw_risk = stop_loss - entry
-            clamped_risk = max(min_sl_dist, min(raw_risk if raw_risk > 0 else (atr * 1.0), max_sl_dist))
+            clamped_risk = max(min_sl_dist, min(raw_risk if raw_risk > 0 else (atr * 1.0 * vix_multiplier), max_sl_dist))
             stop_loss = round(entry + clamped_risk, 2)
-            target = round(entry - (clamped_risk * 1.8), 2)
+            target = round(entry - (clamped_risk * 1.8 * vix_multiplier), 2)
 
         risk = abs(entry - stop_loss)
         reward = abs(target - entry)
@@ -263,6 +269,9 @@ class SignalGenerator:
             return None
         elif direction == "SHORT" and ("STRONG_BULLISH" in market_regime or nifty_change_pct > 1.2):
             return None
+
+        # Multi-Timeframe (5m + 15m + 1H) Trend Confluence Evaluation
+        mtf_res = calculate_multi_timeframe_confluence(df)
 
         if direction == "LONG" and "BEARISH" in market_regime and nifty_change_pct < -0.8:
             conflicting_factors.append(f"Counter-trend vs Broad Market ({market_regime})")
@@ -331,23 +340,25 @@ class SignalGenerator:
             elif direction == "SHORT" and current_price < d_ema50:
                 supporting_factors.append("Below Daily 50 EMA")
 
-        # 1-Hour Trend Consensus from intraday candles (12 x 5m bars = 60m)
-        if len(df) >= 12:
-            h_ema = float(df['close'].ewm(span=12, adjust=False).mean().iloc[-1])
-            if direction == "LONG":
-                if current_price < h_ema * 0.992:
-                    conflicting_factors.append("Counter to 1-Hour Trend (Price < 1H EMA)")
-                    if "BULLISH" not in market_regime:
-                        return None
-                elif current_price >= h_ema:
-                    supporting_factors.append("1H Higher-Timeframe Trend Bullish")
-            elif direction == "SHORT":
-                if current_price > h_ema * 1.008:
-                    conflicting_factors.append("Counter to 1-Hour Trend (Price > 1H EMA)")
-                    if "BEARISH" not in market_regime:
-                        return None
-                elif current_price <= h_ema:
-                    supporting_factors.append("1H Higher-Timeframe Trend Bearish")
+        # Factor Guardrail 4: Multi-Timeframe (5m + 15m + 1H) Trend Confluence
+        if direction == "LONG":
+            if mtf_res.get("alignment") == "FULL_BULLISH":
+                supporting_factors.append(f"MTF Confluence: {mtf_res.get('detail')}")
+            elif mtf_res.get("trend_1h") == "BEARISH" and mtf_res.get("trend_15m") == "BEARISH":
+                conflicting_factors.append("Opposing HTF Trend (15m & 1H both Bearish)")
+                if "BULLISH" not in market_regime:
+                    return None  # Strict MTF rejection: Never long into double higher-timeframe downtrend!
+            elif mtf_res.get("trend_1h") == "BULLISH":
+                supporting_factors.append("1H Higher-Timeframe Trend Bullish")
+        elif direction == "SHORT":
+            if mtf_res.get("alignment") == "FULL_BEARISH":
+                supporting_factors.append(f"MTF Confluence: {mtf_res.get('detail')}")
+            elif mtf_res.get("trend_1h") == "BULLISH" and mtf_res.get("trend_15m") == "BULLISH":
+                conflicting_factors.append("Opposing HTF Trend (15m & 1H both Bullish)")
+                if "BEARISH" not in market_regime:
+                    return None  # Strict MTF rejection: Never short into double higher-timeframe uptrend!
+            elif mtf_res.get("trend_1h") == "BEARISH":
+                supporting_factors.append("1H Higher-Timeframe Trend Bearish")
 
         # Factor Guardrail 5: Mansfield Relative Strength vs NIFTY 50
         stock_chg = 0.0
@@ -516,7 +527,10 @@ class SignalGenerator:
             factor_scores={
                 "rvol": round(rvol, 2),
                 "rsi": round(rsi, 2),
-                "risk_reward": round(rr_ratio, 2)
+                "risk_reward": round(rr_ratio, 2),
+                "mtf_confluence": mtf_res.get("confluence_score", 50),
+                "mtf_alignment": mtf_res.get("alignment", "NEUTRAL"),
+                "vix_multiplier": round(vix_multiplier, 2)
             },
             data_freshness_seconds=1.2,
             expiry_time=expiry.isoformat() + "Z"

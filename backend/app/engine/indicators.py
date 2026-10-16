@@ -363,3 +363,102 @@ def enrich_candles_with_indicators(df: pd.DataFrame) -> pd.DataFrame:
     res['bb_lower'] = bb_lower
     
     return res
+
+
+def calculate_multi_timeframe_confluence(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Evaluates Multi-Timeframe (MTF) trend consensus across 5m, 15m, and 1h horizons.
+    Helps eliminate counter-trend whipsaws and false intraday breakouts.
+    """
+    if df.empty or len(df) < 6:
+        return {
+            "trend_5m": "NEUTRAL",
+            "trend_15m": "NEUTRAL",
+            "trend_1h": "NEUTRAL",
+            "alignment": "NEUTRAL",
+            "confluence_score": 50,
+            "is_full_alignment": False,
+            "detail": "Insufficient candle bars for MTF evaluation."
+        }
+
+    close = df['close']
+    curr_price = float(close.iloc[-1])
+
+    # 1. 5-Minute Horizon (EMA9 & EMA21)
+    ema9 = close.ewm(span=9, adjust=False).mean()
+    ema21 = close.ewm(span=21, adjust=False).mean()
+    curr_ema9 = float(ema9.iloc[-1])
+    curr_ema21 = float(ema21.iloc[-1])
+
+    if curr_price >= curr_ema9 >= curr_ema21:
+        trend_5m = "BULLISH"
+    elif curr_price <= curr_ema9 <= curr_ema21:
+        trend_5m = "BEARISH"
+    elif curr_price >= curr_ema21:
+        trend_5m = "BULLISH"
+    elif curr_price <= curr_ema21:
+        trend_5m = "BEARISH"
+    else:
+        trend_5m = "NEUTRAL"
+
+    # 2. 15-Minute Horizon (Synthesized 3-bar span ≈ 27 bars)
+    span_15m = min(len(close), 27)
+    ema15 = close.ewm(span=span_15m, adjust=False).mean()
+    curr_ema15 = float(ema15.iloc[-1])
+    if curr_price > curr_ema15 * 1.001:
+        trend_15m = "BULLISH"
+    elif curr_price < curr_ema15 * 0.999:
+        trend_15m = "BEARISH"
+    else:
+        trend_15m = "NEUTRAL"
+
+    # 3. 1-Hour Horizon (Synthesized 12-bar span ≈ 60 bars)
+    span_1h = min(len(close), 60)
+    ema1h = close.ewm(span=span_1h, adjust=False).mean()
+    curr_ema1h = float(ema1h.iloc[-1])
+    if curr_price > curr_ema1h * 1.002:
+        trend_1h = "BULLISH"
+    elif curr_price < curr_ema1h * 0.998:
+        trend_1h = "BEARISH"
+    else:
+        trend_1h = "NEUTRAL"
+
+    # Evaluate Confluence & Consensus
+    bull_count = sum(1 for t in [trend_5m, trend_15m, trend_1h] if t == "BULLISH")
+    bear_count = sum(1 for t in [trend_5m, trend_15m, trend_1h] if t == "BEARISH")
+
+    if bull_count == 3:
+        alignment = "FULL_BULLISH"
+        score = 96
+        detail = "Triple MTF Confluence: 5m, 15m & 1H all Bullish"
+    elif bull_count == 2 and bear_count == 0:
+        alignment = "PARTIAL_BULLISH"
+        score = 80
+        detail = "Dual MTF Confluence: 2/3 Timeframes Bullish"
+    elif bear_count == 3:
+        alignment = "FULL_BEARISH"
+        score = 96
+        detail = "Triple MTF Confluence: 5m, 15m & 1H all Bearish"
+    elif bear_count == 2 and bull_count == 0:
+        alignment = "PARTIAL_BEARISH"
+        score = 80
+        detail = "Dual MTF Confluence: 2/3 Timeframes Bearish"
+    elif (trend_5m == "BULLISH" and trend_1h == "BEARISH") or (trend_5m == "BEARISH" and trend_1h == "BULLISH"):
+        alignment = "COUNTER_TREND"
+        score = 25
+        detail = f"Counter-Trend Trap: 5m {trend_5m} vs 1H {trend_1h}"
+    else:
+        alignment = "NEUTRAL"
+        score = 50
+        detail = "Mixed Timeframe Consolidation"
+
+    return {
+        "trend_5m": trend_5m,
+        "trend_15m": trend_15m,
+        "trend_1h": trend_1h,
+        "alignment": alignment,
+        "confluence_score": score,
+        "is_full_alignment": alignment in ["FULL_BULLISH", "FULL_BEARISH"],
+        "detail": detail
+    }
+
