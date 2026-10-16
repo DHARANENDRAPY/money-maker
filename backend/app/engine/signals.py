@@ -257,7 +257,13 @@ class SignalGenerator:
             # Poor risk-reward => enforce No Trade
             return None
             
-        # Cross check macro market regime alignment
+        # Cross check macro market regime alignment:
+        # Prevent fighting strong macro trends (NIFTY down > 1.2% or STRONG_BEARISH blocks Longs; NIFTY up > 1.2% or STRONG_BULLISH blocks Shorts)
+        if direction == "LONG" and ("STRONG_BEARISH" in market_regime or nifty_change_pct < -1.2):
+            return None
+        elif direction == "SHORT" and ("STRONG_BULLISH" in market_regime or nifty_change_pct > 1.2):
+            return None
+
         if direction == "LONG" and "BEARISH" in market_regime and nifty_change_pct < -0.8:
             conflicting_factors.append(f"Counter-trend vs Broad Market ({market_regime})")
         elif direction == "SHORT" and "BULLISH" in market_regime and nifty_change_pct > 0.8:

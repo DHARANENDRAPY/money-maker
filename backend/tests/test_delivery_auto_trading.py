@@ -83,7 +83,7 @@ def test_delivery_breakeven_trailing_and_target_exit():
     entry = 380.0
     target_1 = 410.0  # +30 pts (target)
     stop_loss = 360.0  # -20 pts (SL)
-    shares = 10
+    shares = 1
 
     res = ai_auto_trader.add_custom_delivery_trade(
         symbol=symbol,

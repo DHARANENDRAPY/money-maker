@@ -13,8 +13,17 @@ const renderExitReasonBadge = (reason) => {
   if (reason === 'TARGET_1_HIT') {
     return <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">🎯 Target 1 Hit</span>;
   }
-  if (reason === 'PROFIT_LOCKED_35PCT') {
-    return <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold">🛡️ Profit Lock (35%)</span>;
+  if (reason === 'T1_PARTIAL_PROFIT_BOOKED') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">🎯 T1 (50% Booked)</span>;
+  }
+  if (reason === 'TARGET_2_HIT') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">🏆 Target 2 Hit (Runner)</span>;
+  }
+  if (reason === 'RUNNER_BREAKEVEN_EXIT') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold">🔒 Runner Breakeven Exit</span>;
+  }
+  if (reason === 'PROFIT_LOCKED_35PCT' || reason === 'RUNNER_PROFIT_LOCKED_T1') {
+    return <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold">🛡️ Profit Lock</span>;
   }
   if (reason === 'RISK_FREE_BREAKEVEN') {
     return <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">🔒 Breakeven (Zero Risk)</span>;
@@ -232,13 +241,23 @@ export default function PaperTradingPage() {
                         {pos.trade_type}
                       </span>
                       {pos.trailing_status === 'PROFIT_LOCKED_35PCT' && (
-                        <span className="text-[9px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold animate-pulse">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold animate-pulse">
                           🛡️ 35% PROFIT LOCKED
                         </span>
                       )}
                       {pos.trailing_status === 'RISK_FREE_BREAKEVEN' && (
-                        <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
                           🔒 ZERO-RISK BREAKEVEN
+                        </span>
+                      )}
+                      {pos.trailing_status === 'T1_BOOKED_RUNNER_ACTIVE' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold animate-pulse">
+                          🏃 50% RUNNER (SL @ BREAKEVEN)
+                        </span>
+                      )}
+                      {pos.trailing_status === 'RUNNER_PROFIT_LOCKED_T1' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                          🏆 RUNNER LOCKED (SL @ T1)
                         </span>
                       )}
                     </div>

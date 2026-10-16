@@ -237,3 +237,150 @@ def test_stagnation_time_decay_exit():
     closed = [t for t in portfolio.closed_trades if str(t.get("position_id")) == pos_id]
     assert len(closed) == 1
     assert closed[0]["exit_reason"] == "STAGNATION_TIME_DECAY_EXIT"
+
+
+def test_multi_target_partial_booking_and_runner_to_t2():
+    """Verify that hitting Target 1 books 50% shares, moves SL to entry, and allows runner to Target 2."""
+    portfolio.reset(100000.0)
+    sym = "TEST_RUNNER_STOCK"
+
+    init_quote = Quote(
+        symbol=sym,
+        name="Test Runner Stock",
+        ltp=1000.0,
+        open=1000.0,
+        high=1005.0,
+        low=995.0,
+        close=1000.0,
+        volume=50000,
+        change=0.0,
+        change_pct=0.0,
+        vwap=1000.0,
+        day_range_pct=1.0,
+        rel_volume=1.2,
+        sector="Test",
+        last_update="10:00:00",
+        data_source="TEST_FEED"
+    )
+    market_state.active_provider._batch_quotes_cache[sym] = init_quote
+
+    req = PlacePaperTradeRequest(
+        symbol=sym,
+        direction="LONG",
+        trade_type="DELIVERY",  # DELIVERY avoids market-close square-off
+        product_type="CNC",
+        entry_price=1000.0,
+        target_1=1020.0,
+        target_2=1040.0,
+        stop_loss=980.0,
+        budget=10000.0,
+        shares=10,
+        strategy="Test Multi-Target"
+    )
+    order_res = place_paper_trade(req)
+    pos_id = str(order_res["position"]["position_id"])
+    assert pos_id in portfolio.positions
+    assert portfolio.positions[pos_id]["shares"] == 10
+
+    # Phase 1: Price touches Target 1 (1021.0 >= 1020.0)
+    t1_quote = init_quote.model_copy(update={"ltp": 1021.0, "close": 1021.0, "change": 21.0, "change_pct": 2.1})
+    market_state.active_provider._batch_quotes_cache[sym] = t1_quote
+
+    summary = portfolio.get_summary()
+
+    # The position must still be active as a runner with 5 remaining shares!
+    assert pos_id in portfolio.positions
+    runner_pos = portfolio.positions[pos_id]
+    assert runner_pos["shares"] == 5
+    assert runner_pos["t1_booked"] is True
+    assert runner_pos["stop_loss"] == 1000.0  # SL moved to breakeven!
+    assert runner_pos["trailing_status"] == "T1_BOOKED_RUNNER_ACTIVE"
+
+    # Verify that the 5 booked shares are recorded in closed_trades
+    t1_booked_trades = [t for t in portfolio.closed_trades if t.get("exit_reason") == "T1_PARTIAL_PROFIT_BOOKED"]
+    assert len(t1_booked_trades) == 1
+    assert t1_booked_trades[0]["shares"] == 5
+    assert t1_booked_trades[0]["realized_pnl"] > 0
+
+    # Phase 2: Price reaches Target 2 (1042.0 >= 1040.0)
+    t2_quote = init_quote.model_copy(update={"ltp": 1042.0, "close": 1042.0, "change": 42.0, "change_pct": 4.2})
+    market_state.active_provider._batch_quotes_cache[sym] = t2_quote
+
+    summary2 = portfolio.get_summary()
+
+    # Runner position is now fully closed at Target 2
+    assert pos_id not in portfolio.positions
+    t2_closed_trades = [t for t in portfolio.closed_trades if t.get("exit_reason") == "TARGET_2_HIT"]
+    assert len(t2_closed_trades) == 1
+    assert t2_closed_trades[0]["shares"] == 5
+    assert t2_closed_trades[0]["exit_price"] == 1042.0
+
+
+def test_sector_concentration_guard():
+    """Verify that Sector Exposure Guard prevents placing > 2 concurrent trades in the same sector."""
+    from app.providers.universe import NSE_UNIVERSE
+    from app.services.ai_auto_trader import ai_auto_trader
+
+    portfolio.reset(100000.0)
+
+    # Place 2 Banking trades
+    portfolio.positions["POS_1"] = {
+        "position_id": "POS_1",
+        "symbol": "HDFCBANK",
+        "sector": "Banking & Fin",
+        "direction": "LONG",
+        "entry_price": 1600.0,
+        "shares": 5,
+        "margin_used": 1600.0,
+        "stop_loss": 1580.0,
+        "target_1": 1640.0,
+        "current_price": 1600.0,
+        "trade_type": "INTRADAY"
+    }
+    portfolio.positions["POS_2"] = {
+        "position_id": "POS_2",
+        "symbol": "ICICIBANK",
+        "sector": "Banking & Fin",
+        "direction": "LONG",
+        "entry_price": 1200.0,
+        "shares": 5,
+        "margin_used": 1200.0,
+        "stop_loss": 1180.0,
+        "target_1": 1240.0,
+        "current_price": 1200.0,
+        "trade_type": "INTRADAY"
+    }
+
+    # Verify sector count
+    banking_count = sum(
+        1 for p in portfolio.positions.values()
+        if (p.get("sector") or NSE_UNIVERSE.get(p.get("symbol", "").upper(), {}).get("sector", "Other")).lower() == "banking & fin"
+    )
+    assert banking_count == 2
+
+    # A third banking candidate (SBIN) should be rejected by the sector concentration guard
+    cand_sym = "SBIN"
+    cand_sector = NSE_UNIVERSE.get(cand_sym, {}).get("sector", "Other")
+    assert cand_sector == "Banking & Fin"
+    should_skip = banking_count >= 2
+    assert should_skip is True
+
+
+def test_macro_regime_disqualification():
+    """Verify that Long signals are rejected during STRONG_BEARISH regime or NIFTY plunge < -1.2%."""
+    df = _create_mock_candles(50, 1200.0)
+    df = enrich_candles_with_indicators(df)
+
+    # In STRONG_BEARISH regime with Nifty down -1.5%, Long breakout must be rejected
+    signal = SignalGenerator.generate_signal_for_stock(
+        symbol="RELIANCE",
+        df=df,
+        current_price=1200.0,
+        sector="Energy & Oil",
+        sector_change_pct=-1.5,
+        nifty_change_pct=-1.5,
+        market_regime="STRONG_BEARISH",
+        market_breadth_ad=0.4
+    )
+    assert signal is None
+

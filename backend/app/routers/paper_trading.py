@@ -223,35 +223,54 @@ class PaperPortfolioStore:
                     be_sl = entry  # exact breakeven
                     profit_lock_sl = round(entry + 0.35 * (t1 - entry), 2)  # lock in 35% profit
 
-                    if curr_price >= (entry + three_quarter_dist) and sl < profit_lock_sl:
-                        pos["stop_loss"] = profit_lock_sl
-                        sl = profit_lock_sl
-                        pos["trailing_status"] = "PROFIT_LOCKED_35PCT"
-                        try:
-                            db_tr = SessionLocal()
-                            r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
-                            if r_tr:
-                                r_tr.actual_stop_loss = profit_lock_sl
-                                db_tr.commit()
-                            db_tr.close()
-                        except Exception:
-                            pass
-                    elif curr_price >= (entry + half_target_dist) and sl < be_sl:
-                        pos["stop_loss"] = be_sl
-                        sl = be_sl
-                        pos["trailing_status"] = "RISK_FREE_BREAKEVEN"
-                        try:
-                            db_tr = SessionLocal()
-                            r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
-                            if r_tr:
-                                r_tr.actual_stop_loss = be_sl
-                                db_tr.commit()
-                            db_tr.close()
-                        except Exception:
-                            pass
+                    if not pos.get("t1_booked"):
+                        if curr_price >= (entry + three_quarter_dist) and sl < profit_lock_sl:
+                            pos["stop_loss"] = profit_lock_sl
+                            sl = profit_lock_sl
+                            pos["trailing_status"] = "PROFIT_LOCKED_35PCT"
+                            try:
+                                db_tr = SessionLocal()
+                                r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
+                                if r_tr:
+                                    r_tr.actual_stop_loss = profit_lock_sl
+                                    db_tr.commit()
+                                db_tr.close()
+                            except Exception:
+                                pass
+                        elif curr_price >= (entry + half_target_dist) and sl < be_sl:
+                            pos["stop_loss"] = be_sl
+                            sl = be_sl
+                            pos["trailing_status"] = "RISK_FREE_BREAKEVEN"
+                            try:
+                                db_tr = SessionLocal()
+                                r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
+                                if r_tr:
+                                    r_tr.actual_stop_loss = be_sl
+                                    db_tr.commit()
+                                db_tr.close()
+                            except Exception:
+                                pass
 
+                    # Target 1 & Runner Scaling Triggers
                     if curr_price >= t1 and not pos.get("t1_booked"):
-                        auto_exit_reason = "TARGET_1_HIT"
+                        if pos.get("shares", 1) > 1:
+                            self._partial_close_position_internal(pos_id, curr_price, "T1_PARTIAL_PROFIT_BOOKED", book_ratio=0.5)
+                            sl = entry
+                        else:
+                            auto_exit_reason = "TARGET_1_HIT"
+                    elif pos.get("t1_booked"):
+                        # Runner is active: Target 2 or Runner Trailing
+                        t2 = pos.get("target_2", round(t1 * 1.02, 2))
+                        runner_half_t2 = t1 + (t2 - t1) * 0.50
+                        if curr_price >= runner_half_t2 and sl < t1:
+                            pos["stop_loss"] = t1  # Lock in full T1 profit for the runner
+                            sl = t1
+                            pos["trailing_status"] = "RUNNER_PROFIT_LOCKED_T1"
+
+                        if curr_price >= t2:
+                            auto_exit_reason = "TARGET_2_HIT"
+                        elif curr_price <= sl:
+                            auto_exit_reason = "RUNNER_BREAKEVEN_EXIT" if sl <= entry else "PROFIT_LOCKED_35PCT"
                     elif curr_price <= sl:
                         auto_exit_reason = "STOP_LOSS_HIT"
                 else:
@@ -261,35 +280,53 @@ class PaperPortfolioStore:
                     be_sl = entry
                     profit_lock_sl = round(entry - 0.35 * (entry - t1), 2)
 
-                    if curr_price <= (entry - three_quarter_dist) and sl > profit_lock_sl:
-                        pos["stop_loss"] = profit_lock_sl
-                        sl = profit_lock_sl
-                        pos["trailing_status"] = "PROFIT_LOCKED_35PCT"
-                        try:
-                            db_tr = SessionLocal()
-                            r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
-                            if r_tr:
-                                r_tr.actual_stop_loss = profit_lock_sl
-                                db_tr.commit()
-                            db_tr.close()
-                        except Exception:
-                            pass
-                    elif curr_price <= (entry - half_target_dist) and sl > be_sl:
-                        pos["stop_loss"] = be_sl
-                        sl = be_sl
-                        pos["trailing_status"] = "RISK_FREE_BREAKEVEN"
-                        try:
-                            db_tr = SessionLocal()
-                            r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
-                            if r_tr:
-                                r_tr.actual_stop_loss = be_sl
-                                db_tr.commit()
-                            db_tr.close()
-                        except Exception:
-                            pass
+                    if not pos.get("t1_booked"):
+                        if curr_price <= (entry - three_quarter_dist) and sl > profit_lock_sl:
+                            pos["stop_loss"] = profit_lock_sl
+                            sl = profit_lock_sl
+                            pos["trailing_status"] = "PROFIT_LOCKED_35PCT"
+                            try:
+                                db_tr = SessionLocal()
+                                r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
+                                if r_tr:
+                                    r_tr.actual_stop_loss = profit_lock_sl
+                                    db_tr.commit()
+                                db_tr.close()
+                            except Exception:
+                                pass
+                        elif curr_price <= (entry - half_target_dist) and sl > be_sl:
+                            pos["stop_loss"] = be_sl
+                            sl = be_sl
+                            pos["trailing_status"] = "RISK_FREE_BREAKEVEN"
+                            try:
+                                db_tr = SessionLocal()
+                                r_tr = db_tr.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
+                                if r_tr:
+                                    r_tr.actual_stop_loss = be_sl
+                                    db_tr.commit()
+                                db_tr.close()
+                            except Exception:
+                                pass
 
+                    # Target 1 & Runner Scaling Triggers
                     if curr_price <= t1 and not pos.get("t1_booked"):
-                        auto_exit_reason = "TARGET_1_HIT"
+                        if pos.get("shares", 1) > 1:
+                            self._partial_close_position_internal(pos_id, curr_price, "T1_PARTIAL_PROFIT_BOOKED", book_ratio=0.5)
+                            sl = entry
+                        else:
+                            auto_exit_reason = "TARGET_1_HIT"
+                    elif pos.get("t1_booked"):
+                        t2 = pos.get("target_2", round(t1 * 0.98, 2))
+                        runner_half_t2 = t1 - (t1 - t2) * 0.50
+                        if curr_price <= runner_half_t2 and sl > t1:
+                            pos["stop_loss"] = t1
+                            sl = t1
+                            pos["trailing_status"] = "RUNNER_PROFIT_LOCKED_T1"
+
+                        if curr_price <= t2:
+                            auto_exit_reason = "TARGET_2_HIT"
+                        elif curr_price >= sl:
+                            auto_exit_reason = "RUNNER_BREAKEVEN_EXIT" if sl >= entry else "PROFIT_LOCKED_35PCT"
                     elif curr_price >= sl:
                         auto_exit_reason = "STOP_LOSS_HIT"
 
@@ -365,6 +402,83 @@ class PaperPortfolioStore:
             "wins_count": len(winning_trades),
             "losses_count": len(losing_trades)
         }
+
+    def _partial_close_position_internal(self, pos_id: str, exit_price: float, exit_reason: str, book_ratio: float = 0.5) -> Dict[str, Any]:
+        pos = self.positions.get(pos_id)
+        if not pos:
+            return {}
+
+        qty = pos.get("shares", 1)
+        if qty <= 1:
+            return self._close_position_internal(pos_id, exit_price, "TARGET_1_HIT")
+
+        booked_shares = max(1, int(qty * book_ratio))
+        remaining_shares = qty - booked_shares
+
+        is_long = pos["direction"] == "LONG"
+        entry = pos["entry_price"]
+        trade_type = pos.get("trade_type", "INTRADAY")
+
+        # Gross PnL on booked portion
+        if is_long:
+            gross_pnl = (exit_price - entry) * booked_shares
+            pnl_pct = ((exit_price - entry) / entry) * 100.0 if entry > 0 else 0.0
+        else:
+            gross_pnl = (entry - exit_price) * booked_shares
+            pnl_pct = ((entry - exit_price) / entry) * 100.0 if entry > 0 else 0.0
+
+        turnover = (entry * booked_shares) + (exit_price * booked_shares)
+        brokerage = min(20.0, turnover * 0.0003) if trade_type == "INTRADAY" else min(20.0, turnover * 0.0005)
+        stt = (exit_price * booked_shares) * 0.00025 if trade_type == "INTRADAY" else turnover * 0.001
+        exchange_charges = turnover * 0.0000345
+        gst = (brokerage + exchange_charges) * 0.18
+        stamp_duty = (entry * booked_shares) * 0.00003
+        total_charges = round(brokerage + stt + exchange_charges + gst + stamp_duty, 2)
+
+        net_pnl = round(gross_pnl - total_charges, 2)
+        gross_pnl = round(gross_pnl, 2)
+        pnl_pct = round(pnl_pct, 2)
+
+        # Release margin proportional to booked shares and credit realized profit
+        released_margin = round(pos["margin_used"] * (booked_shares / qty), 2)
+        pos["margin_used"] = max(0.0, round(pos["margin_used"] - released_margin, 2))
+        self.available_cash += released_margin + net_pnl
+
+        # Log booked portion into closed trades audit history
+        booked_record = {
+            **pos,
+            "position_id": f"{pos_id}_T1",
+            "shares": booked_shares,
+            "exit_price": round(exit_price, 2),
+            "exit_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "exit_reason": exit_reason,
+            "gross_pnl": gross_pnl,
+            "charges": total_charges,
+            "realized_pnl": net_pnl,
+            "realized_pnl_pct": pnl_pct,
+            "is_win": net_pnl > 0
+        }
+        self.closed_trades.append(booked_record)
+
+        # Update remaining active runner position
+        pos["shares"] = remaining_shares
+        pos["t1_booked"] = True
+        pos["t1_booked_price"] = round(exit_price, 2)
+        pos["stop_loss"] = entry  # Move SL to Entry (100% Risk-Free Runner!)
+        pos["trailing_status"] = "T1_BOOKED_RUNNER_ACTIVE"
+
+        try:
+            db = SessionLocal()
+            r = db.query(TradeJournalRecord).filter(TradeJournalRecord.id == int(pos_id)).first()
+            if r:
+                r.actual_stop_loss = entry
+                r.notes = f"T1 partial profit booked ({booked_shares} sh). Runner trailing at breakeven."
+                db.commit()
+            db.close()
+        except Exception:
+            pass
+
+        return booked_record
 
     def _close_position_internal(self, pos_id: str, exit_price: float, exit_reason: str) -> Dict[str, Any]:
         pos = self.positions.pop(pos_id, None)

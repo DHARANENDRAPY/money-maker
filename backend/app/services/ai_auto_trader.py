@@ -19,6 +19,7 @@ from typing import Dict, List, Any, Optional
 from app.database import SessionLocal
 from app.models.all_models import AITradeTransactionRecord
 from app.services.market_state import market_state
+from app.providers.universe import NSE_UNIVERSE
 
 logger = logging.getLogger("ai_auto_trader")
 
@@ -158,6 +159,17 @@ class AIAutoTraderService:
                     break
 
                 sym = cand["symbol"].upper()
+
+                # Sector Concentration Guard: Cap at max 2 active positions per sector
+                cand_sector = cand.get("sector") or NSE_UNIVERSE.get(sym, {}).get("sector", "Other")
+                same_sec_count = sum(
+                    1 for p in portfolio.positions.values()
+                    if (p.get("sector") or NSE_UNIVERSE.get(p.get("symbol", "").upper(), {}).get("sector", "Other")).lower() == cand_sector.lower()
+                )
+                if same_sec_count >= 2:
+                    logger.info(f"Sector Exposure Guard: Skipping {sym} - sector '{cand_sector}' already has {same_sec_count} active positions (max 2).")
+                    continue
+
                 direction = cand.get("direction", "LONG").upper()
                 entry = cand.get("entry_price", 0.0)
                 target = cand.get("target_price", 0.0)
@@ -170,9 +182,19 @@ class AIAutoTraderService:
                 market_regime = cand.get("market_regime", "UNCERTAIN")
                 supporting = cand.get("supporting_factors", [])
 
-                # Sizing: 5x intraday margin
-                buying_power = self.trade_budget_per_order * 5.0
-                qty = max(1, int(buying_power / entry))
+                # Volatility-Adjusted (Risk-Parity) & Half-Kelly Sizing:
+                risk_per_share = abs(entry - sl)
+                effective_risk = max(risk_per_share, entry * 0.003)  # 0.3% floor
+                nominal_risk_inr = max(50.0, self.trade_budget_per_order * 0.05)
+                risk_shares = max(1, int(nominal_risk_inr / effective_risk))
+                margin_shares = max(1, int((self.trade_budget_per_order * 5.0) / entry))
+                base_shares = min(risk_shares, margin_shares)
+
+                # Half-Kelly Conviction Multiplier:
+                if conviction >= 0.80 and ml_prob >= 0.60:
+                    qty = max(2, min(margin_shares, int(base_shares * 1.25)))
+                else:
+                    qty = max(2, base_shares) if (base_shares * entry / 5.0) <= self.trade_budget_per_order else max(1, base_shares)
 
                 req = PlacePaperTradeRequest(
                     symbol=sym,
@@ -247,6 +269,16 @@ class AIAutoTraderService:
                 if sym in open_symbols:
                     continue
 
+                # Sector Concentration Guard: Cap at max 2 active positions per sector
+                pick_sector = pick.get("sector") or NSE_UNIVERSE.get(sym, {}).get("sector", "Other")
+                same_sec_count = sum(
+                    1 for p in portfolio.positions.values()
+                    if (p.get("sector") or NSE_UNIVERSE.get(p.get("symbol", "").upper(), {}).get("sector", "Other")).lower() == pick_sector.lower()
+                )
+                if same_sec_count >= 2:
+                    logger.info(f"Sector Exposure Guard: Skipping Delivery {sym} - sector '{pick_sector}' already has {same_sec_count} active positions (max 2).")
+                    continue
+
                 entry = pick.get("ltp", 0.0)
                 target_1 = pick.get("target_1", 0.0)
                 target_2 = pick.get("target_2", target_1 * 1.10)
@@ -258,12 +290,13 @@ class AIAutoTraderService:
                 rr = pick.get("risk_reward_ratio", 2.0)
                 horizon = pick.get("holding_period", "2 to 4 Weeks (CNC)")
 
-                # Sizing: 1x cash margin (NO LEVERAGE for Delivery)
+                # Sizing: 1x cash margin (prefer >= 2 shares if budget allows for partial profit booking)
                 suggested = pick.get("suggested_shares")
                 if suggested and suggested > 0:
                     qty = suggested
                 elif entry <= self.delivery_budget_per_order:
-                    qty = max(1, int(self.delivery_budget_per_order / entry))
+                    max_shares = max(1, int(self.delivery_budget_per_order / entry))
+                    qty = max_shares
                 else:
                     qty = 1
 
