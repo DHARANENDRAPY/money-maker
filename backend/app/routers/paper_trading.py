@@ -52,6 +52,31 @@ def _safe_parse_utc(ts_str: Optional[str]) -> Optional[datetime.datetime]:
         return None
 
 
+def _generate_ai_post_mortem(pos: Dict[str, Any], exit_price: float, exit_reason: str, net_pnl: float) -> str:
+    sym = pos.get("symbol", "")
+    entry = pos.get("entry_price", exit_price)
+    is_win = net_pnl > 0
+
+    if "TARGET_2" in exit_reason:
+        return f"🏆 Target 2 Runner Reached: #{sym} achieved full 2-tier target expansion. High confluence setup captured maximum trend potential."
+    elif "TARGET_1" in exit_reason:
+        return f"🎯 Target 1 Captured: #{sym} hit profit target cleanly. Momentum aligned with institutional flow."
+    elif "T1_PARTIAL" in exit_reason:
+        return f"🎯 50% Profit Booked: Locked in Target 1 gains for #{sym}. Remaining position managed with zero downside risk."
+    elif "BREAKEVEN" in exit_reason or "RUNNER_BREAKEVEN" in exit_reason:
+        return f"🔒 Zero-Risk Exit: #{sym} reversed after testing initial targets, but the 2-tier trailing stop eliminated loss and preserved capital."
+    elif "PROFIT_LOCKED" in exit_reason:
+        return f"🛡️ Profit Lock Protection: #{sym} captured guaranteed profit after reaching +0.75x risk before the market exhausted."
+    elif "STAGNATION" in exit_reason:
+        return f"⏳ Stagnation Time-Decay: #{sym} showed zero directional progress for 45 minutes. Capital protected from midday chop."
+    elif "STOP_LOSS" in exit_reason:
+        return f"🛑 Controlled Stop Loss: Disciplined exit executed for #{sym}. Risk strictly contained to -₹{abs(net_pnl):,.2f} within risk limits."
+    elif "MARKET_CLOSE" in exit_reason or "15:15" in exit_reason:
+        return f"🕒 End of Day Square-Off: #{sym} closed at 15:15 IST to prevent overnight gap risk."
+    else:
+        return f"Manual trade closure executed for #{sym} at ₹{exit_price:.2f} (Net: {'+' if is_win else ''}₹{net_pnl:.2f})."
+
+
 # In-memory paper trading portfolio store (persists during backend session)
 DEFAULT_PAPER_CAPITAL = 10000000.0  # ₹1 Crore (10,000,000 INR)
 
@@ -478,8 +503,6 @@ class PaperPortfolioStore:
         except Exception:
             pass
 
-        return booked_record
-
     def _close_position_internal(self, pos_id: str, exit_price: float, exit_reason: str) -> Dict[str, Any]:
         pos = self.positions.pop(pos_id, None)
         if not pos:
@@ -514,6 +537,8 @@ class PaperPortfolioStore:
         # Release margin and add net P&L back to cash
         self.available_cash += pos["margin_used"] + net_pnl
 
+        post_mortem_text = _generate_ai_post_mortem(pos, exit_price, exit_reason, net_pnl)
+
         closed_record = {
             **pos,
             "exit_price": round(exit_price, 2),
@@ -523,7 +548,8 @@ class PaperPortfolioStore:
             "charges": total_charges,
             "realized_pnl": net_pnl,
             "realized_pnl_pct": pnl_pct,
-            "is_win": net_pnl > 0
+            "is_win": net_pnl > 0,
+            "ai_post_mortem": post_mortem_text
         }
         self.closed_trades.append(closed_record)
         
@@ -633,6 +659,21 @@ def place_paper_trade(req: PlacePaperTradeRequest) -> Dict[str, Any]:
         # Sizing according to user's budget
         buying_power = req.budget * margin_mult
         shares = max(1, int(buying_power / entry))
+
+    # Sector Concentration & Correlation Guardrail:
+    # Max 2 concurrent open positions per sector to prevent correlated multi-trade drawdown
+    from app.providers.universe import NSE_UNIVERSE
+    stock_sector = NSE_UNIVERSE.get(req.symbol.upper(), {}).get("sector", "Other")
+    same_sec_positions = [
+        p for p in portfolio.positions.values()
+        if (p.get("sector") or NSE_UNIVERSE.get(p.get("symbol", "").upper(), {}).get("sector", "Other")).lower() == stock_sector.lower()
+    ]
+    if len(same_sec_positions) >= 2:
+        conflicting_syms = ", ".join(p.get("symbol", "") for p in same_sec_positions)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Sector Concentration Guard: Already have {len(same_sec_positions)} open positions in {stock_sector} ({conflicting_syms}). Max 2 allowed to protect from correlated drawdown."
+        )
 
     margin_required = round((shares * entry) / margin_mult, 2)
 

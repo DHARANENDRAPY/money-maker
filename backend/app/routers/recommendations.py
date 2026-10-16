@@ -233,6 +233,9 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
             volume_pillar = min(98, max(45, int(min(1.5, rvol) / 1.5 * 45 + min(1.8, depth_ratio) / 1.8 * 45)))
             macro_pillar = min(95, max(50, int((82 if regime_aligned else 62) + (8 if abs(sec_chg) > 0.4 else 0))))
 
+            sq_status = f_scores.get('squeeze_status', 'NO_SQUEEZE')
+            candlestick_pat = f_scores.get('candlestick_pattern')
+
             confluence_radar = {
                 "trend_pillar": trend_pillar,
                 "momentum_pillar": momentum_pillar,
@@ -248,7 +251,9 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
                 "institutional_pressure": inst_pressure,
                 "india_vix": vix_val,
                 "vix_multiplier": vix_mult,
-                "vix_regime": "LOW_VOLATILITY" if vix_val < 13.0 else ("ELEVATED_VOLATILITY" if vix_val > 17.0 else "NORMAL_VOLATILITY")
+                "vix_regime": "LOW_VOLATILITY" if vix_val < 13.0 else ("ELEVATED_VOLATILITY" if vix_val > 17.0 else "NORMAL_VOLATILITY"),
+                "squeeze_status": sq_status,
+                "candlestick_pattern": candlestick_pat
             }
 
             recommendations.append({
@@ -278,6 +283,8 @@ def get_ai_recommendations(limit: int = 5) -> Dict[str, Any]:
                 "signal_id": signal.signal_id,
                 "expiry_time": signal.expiry_time,
                 "data_source": provider.get_provider_name(),
+                "squeeze_status": sq_status,
+                "candlestick_pattern": candlestick_pat,
                 "order_flow": {
                     "depth_ratio": depth_ratio,
                     "delta_pct": order_flow_delta_pct,

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { 
   FlaskConical, Play, RotateCcw, TrendingUp, TrendingDown, 
-  ShieldCheck, Target, Award, Calendar, BarChart3, AlertCircle, CheckCircle2 
+  ShieldCheck, Target, Award, Calendar, BarChart3, AlertCircle, CheckCircle2,
+  Sliders, Sparkles, Zap, Check, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { runBacktestSimulation } from '../../services/api';
+import { runBacktestSimulation, optimizeBacktestParameters } from '../../services/api';
 import { useMarket } from '../../context/MarketContext';
 
 const UNIVERSE_SYMBOLS = [
@@ -25,20 +26,37 @@ export default function BacktestLabPage() {
   const [budget, setBudget] = useState(10000);
   const [strategy, setStrategy] = useState("AI_ENSEMBLE");
 
+  // Strategy Tuning Parameters
+  const [slMultiplier, setSlMultiplier] = useState(1.0);
+  const [targetMultiplier, setTargetMultiplier] = useState(1.5);
+  const [runnerMultiplier, setRunnerMultiplier] = useState(3.0);
+  const [showAdvancedParams, setShowAdvancedParams] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
 
-  const handleRunBacktest = async (e) => {
-    if (e) e.preventDefault();
+  // Optimization Lab State
+  const [optimizing, setOptimizing] = useState(false);
+  const [optimizationResult, setOptimizationResult] = useState(null);
+
+  const handleRunBacktest = async (e, customParams = null) => {
+    if (e && e.preventDefault) e.preventDefault();
     try {
       setLoading(true);
+      const activeSl = customParams?.sl_multiplier ?? Number(slMultiplier);
+      const activeT1 = customParams?.target_multiplier ?? Number(targetMultiplier);
+      const activeT2 = customParams?.runner_multiplier ?? Number(runnerMultiplier);
+
       const res = await runBacktestSimulation({
         symbol,
         days: Number(days),
         timeframe,
         initial_capital: Number(capital),
         budget_per_trade: Number(budget),
-        strategy
+        strategy,
+        sl_multiplier: activeSl,
+        target_multiplier: activeT1,
+        runner_multiplier: activeT2
       });
       setResult(res);
       showToast(`✅ Simulation completed for #${symbol}: ${res.win_rate}% Win Rate (${res.total_trades} trades)`, 'success');
@@ -47,6 +65,37 @@ export default function BacktestLabPage() {
       showToast(`Backtest Error: ${err.message}`, 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOptimize = async () => {
+    try {
+      setOptimizing(true);
+      showToast(`⚡ Running parameter grid search optimization on ${symbol} (${days}d)...`, 'info');
+      const data = await optimizeBacktestParameters({
+        symbol,
+        days: Number(days),
+        timeframe,
+        initial_capital: Number(capital),
+        budget_per_trade: Number(budget)
+      });
+      setOptimizationResult(data);
+      showToast(`🎯 Parameter optimization finished: Best Profit Factor ${data.best_setup?.profit_factor}x`, 'success');
+    } catch (err) {
+      console.error(err);
+      showToast(`Optimization Error: ${err.message}`, 'error');
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
+  const applySetup = (setup, andRun = false) => {
+    setSlMultiplier(setup.sl_multiplier);
+    setTargetMultiplier(setup.target_multiplier);
+    setRunnerMultiplier(setup.runner_multiplier);
+    showToast(`Applied: SL ${setup.sl_multiplier}x | T1 ${setup.target_multiplier}x | Runner ${setup.runner_multiplier}x`, 'info');
+    if (andRun) {
+      handleRunBacktest(null, setup);
     }
   };
 
@@ -153,19 +202,227 @@ export default function BacktestLabPage() {
             />
           </div>
 
-          {/* Run Button */}
-          <div className="flex items-end">
+          {/* Run Button & Tune Button */}
+          <div className="flex items-end gap-2 col-span-2 sm:col-span-3 lg:col-span-6 justify-between pt-2 border-t border-slate-800/80">
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 text-white font-bold py-2 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/20 transition-all text-xs"
+              type="button"
+              onClick={() => setShowAdvancedParams(!showAdvancedParams)}
+              className="text-xs text-slate-400 hover:text-cyan-400 flex items-center gap-1.5 transition-colors py-1.5"
             >
-              {loading ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
-              <span>{loading ? 'Running...' : 'Run Simulation'}</span>
+              <Sliders className="w-3.5 h-3.5" />
+              <span>Fine-Tuning Controls: SL {slMultiplier}x | T1 {targetMultiplier}x | T2 {runnerMultiplier}x</span>
+              {showAdvancedParams ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleOptimize}
+                disabled={optimizing || loading}
+                className="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 disabled:opacity-50 font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 text-xs transition-all shadow-md hover:shadow-purple-600/20"
+                title="Run grid-search parameter optimization to discover highest profit factor setup"
+              >
+                {optimizing ? <RotateCcw className="w-4 h-4 animate-spin text-purple-400" /> : <Sparkles className="w-4 h-4 text-purple-400" />}
+                <span>{optimizing ? 'Auto-Tuning...' : 'Auto-Tune Setup'}</span>
+              </button>
+
+              <button
+                type="submit"
+                disabled={loading || optimizing}
+                className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 text-white font-bold py-2 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/20 transition-all text-xs"
+              >
+                {loading ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
+                <span>{loading ? 'Running...' : 'Run Simulation'}</span>
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Collapsible Fine-Tuning Multipliers */}
+        {showAdvancedParams && (
+          <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 mt-2 text-xs">
+            <div>
+              <label className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">
+                Stop Loss Multiplier ({slMultiplier}x ATR)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0.5"
+                max="3.0"
+                value={slMultiplier}
+                onChange={(e) => setSlMultiplier(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono focus:border-cyan-500 focus:outline-none"
+              />
+              <span className="text-[10px] text-slate-500 mt-0.5 block">Tighter SL limits loss, wider SL survives chop.</span>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">
+                Target 1 Multiplier ({targetMultiplier}x ATR)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0.8"
+                max="4.0"
+                value={targetMultiplier}
+                onChange={(e) => setTargetMultiplier(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono focus:border-cyan-500 focus:outline-none"
+              />
+              <span className="text-[10px] text-slate-500 mt-0.5 block">Books 50% lot and locks stop-loss at breakeven.</span>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">
+                Target 2 / Runner Multiplier ({runnerMultiplier}x ATR)
+              </label>
+              <input
+                type="number"
+                step="0.2"
+                min="1.5"
+                max="6.0"
+                value={runnerMultiplier}
+                onChange={(e) => setRunnerMultiplier(Number(e.target.value))}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono focus:border-cyan-500 focus:outline-none"
+              />
+              <span className="text-[10px] text-slate-500 mt-0.5 block">Final runner target for trending expansion days.</span>
+            </div>
+          </div>
+        )}
       </form>
+
+      {/* Parameter Optimization Matrix Section */}
+      {optimizationResult && (
+        <div className="bg-slate-900/90 rounded-2xl border border-purple-500/30 p-5 shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                  <Sparkles className="w-4 h-4" />
+                </span>
+                <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Strategy Parameter Optimization Matrix ({optimizationResult.symbol})
+                </h2>
+              </div>
+              <p className="text-xs text-slate-400 font-sans mt-1">
+                Tested {optimizationResult.grid_tested} parameter combinations over {optimizationResult.days} days ({optimizationResult.timeframe} frame). Ranked by Profit Factor &amp; Net ROI.
+              </p>
+            </div>
+
+            {optimizationResult.best_setup && (
+              <button
+                type="button"
+                onClick={() => applySetup(optimizationResult.best_setup, true)}
+                className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition-all self-start sm:self-auto"
+              >
+                <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Apply #1 Ranked Setup &amp; Run</span>
+              </button>
+            )}
+          </div>
+
+          {/* Best Setup Card */}
+          {optimizationResult.best_setup && (
+            <div className="p-4 rounded-xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 border border-purple-500/30 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 font-bold text-sm">
+                  #1
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase font-bold text-purple-300">Top-Performing Parameter Setup</div>
+                  <div className="text-sm font-bold text-white mt-0.5">
+                    SL Multiplier: <span className="text-cyan-400">{optimizationResult.best_setup.sl_multiplier}x</span> | Target 1: <span className="text-emerald-400">{optimizationResult.best_setup.target_multiplier}x</span> | Runner: <span className="text-amber-400">{optimizationResult.best_setup.runner_multiplier}x</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 text-xs font-mono">
+                <div>
+                  <span className="text-[10px] text-slate-400 block uppercase">Win Rate</span>
+                  <span className="font-bold text-cyan-400">{optimizationResult.best_setup.win_rate}%</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block uppercase">Profit Factor</span>
+                  <span className="font-bold text-amber-400">{optimizationResult.best_setup.profit_factor}x</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block uppercase">Net Return</span>
+                  <span className={`font-bold ${optimizationResult.best_setup.net_roi_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {optimizationResult.best_setup.net_roi_pct >= 0 ? '+' : ''}{optimizationResult.best_setup.net_roi_pct}%
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block uppercase">Max DD</span>
+                  <span className="font-bold text-rose-400">{optimizationResult.best_setup.max_drawdown_pct}%</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Matrix Table */}
+          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+            <table className="w-full text-left text-xs font-mono">
+              <thead className="bg-slate-950/80 text-slate-400 border-b border-slate-800 uppercase text-[10px] sticky top-0">
+                <tr>
+                  <th className="p-2.5">Rank</th>
+                  <th className="p-2.5">Stop Loss</th>
+                  <th className="p-2.5">Target 1</th>
+                  <th className="p-2.5">Runner Target</th>
+                  <th className="p-2.5">Trades</th>
+                  <th className="p-2.5">Win Rate</th>
+                  <th className="p-2.5">Profit Factor</th>
+                  <th className="p-2.5">Net P&amp;L</th>
+                  <th className="p-2.5">Max DD</th>
+                  <th className="p-2.5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                {optimizationResult.optimization_matrix?.map((row, idx) => {
+                  const isTop = idx === 0;
+                  const isCurrent = 
+                    row.sl_multiplier === slMultiplier &&
+                    row.target_multiplier === targetMultiplier &&
+                    row.runner_multiplier === runnerMultiplier;
+
+                  return (
+                    <tr key={idx} className={`hover:bg-slate-800/40 ${isTop ? 'bg-purple-950/20' : ''}`}>
+                      <td className="p-2.5 font-bold text-white">
+                        {isTop ? '🥇 #1' : `#${idx + 1}`}
+                      </td>
+                      <td className="p-2.5 text-cyan-400 font-semibold">{row.sl_multiplier}x ATR</td>
+                      <td className="p-2.5 text-emerald-400 font-semibold">{row.target_multiplier}x ATR</td>
+                      <td className="p-2.5 text-amber-400 font-semibold">{row.runner_multiplier}x ATR</td>
+                      <td className="p-2.5 text-slate-400">{row.total_trades}</td>
+                      <td className="p-2.5 font-bold text-white">{row.win_rate}%</td>
+                      <td className="p-2.5 font-bold text-amber-400">{row.profit_factor}x</td>
+                      <td className={`p-2.5 font-bold ${row.net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {row.net_pnl >= 0 ? '+' : ''}₹{row.net_pnl.toLocaleString('en-IN')} ({row.net_roi_pct}%)
+                      </td>
+                      <td className="p-2.5 text-rose-400">{row.max_drawdown_pct}%</td>
+                      <td className="p-2.5 text-right">
+                        {isCurrent ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                            Active
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => applySetup(row, false)}
+                            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[10px] transition-colors"
+                          >
+                            Apply
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Results View */}
       {result && (

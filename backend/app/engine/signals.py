@@ -5,7 +5,10 @@ import pandas as pd
 import numpy as np
 
 from app.schemas.all_schemas import SignalItem
-from app.engine.indicators import detect_key_levels, calculate_supertrend, calculate_multi_timeframe_confluence
+from app.engine.indicators import (
+    detect_key_levels, calculate_supertrend, calculate_multi_timeframe_confluence,
+    calculate_ttm_squeeze, detect_candlestick_patterns
+)
 from app.engine.factors import FactorEngine
 from app.ml.feature_engineering import extract_features_single_bar
 
@@ -273,6 +276,12 @@ class SignalGenerator:
         # Multi-Timeframe (5m + 15m + 1H) Trend Confluence Evaluation
         mtf_res = calculate_multi_timeframe_confluence(df)
 
+        # Volatility Squeeze Momentum Evaluation (TTM Squeeze)
+        squeeze_res = calculate_ttm_squeeze(df)
+
+        # Institutional Candlestick Pattern Recognition
+        pattern_res = detect_candlestick_patterns(df)
+
         if direction == "LONG" and "BEARISH" in market_regime and nifty_change_pct < -0.8:
             conflicting_factors.append(f"Counter-trend vs Broad Market ({market_regime})")
         elif direction == "SHORT" and "BULLISH" in market_regime and nifty_change_pct > 0.8:
@@ -359,6 +368,32 @@ class SignalGenerator:
                     return None  # Strict MTF rejection: Never short into double higher-timeframe uptrend!
             elif mtf_res.get("trend_1h") == "BEARISH":
                 supporting_factors.append("1H Higher-Timeframe Trend Bearish")
+
+        # Factor Guardrail 4B: TTM Squeeze Momentum Acceleration
+        sq_status = squeeze_res.get("squeeze_status", "NO_SQUEEZE")
+        if direction == "LONG":
+            if sq_status == "SQUEEZE_FIRED_BULLISH":
+                supporting_factors.append("TTM Squeeze Fired Bullish (Momentum Expansion)")
+            elif sq_status == "SQUEEZE_ON":
+                supporting_factors.append("TTM Squeeze Coiling (Energy Build)")
+            elif sq_status == "SQUEEZE_FIRED_BEARISH":
+                conflicting_factors.append("Counter to Bearish Squeeze Momentum")
+        elif direction == "SHORT":
+            if sq_status == "SQUEEZE_FIRED_BEARISH":
+                supporting_factors.append("TTM Squeeze Fired Bearish (Momentum Expansion)")
+            elif sq_status == "SQUEEZE_ON":
+                supporting_factors.append("TTM Squeeze Coiling (Energy Build)")
+            elif sq_status == "SQUEEZE_FIRED_BULLISH":
+                conflicting_factors.append("Counter to Bullish Squeeze Momentum")
+
+        # Factor Guardrail 4C: Institutional Candlestick Pattern Confirmation
+        primary_pat = pattern_res.get("primary_pattern")
+        pat_bias = pattern_res.get("bias", "NEUTRAL")
+        if primary_pat:
+            if (direction == "LONG" and pat_bias == "BULLISH") or (direction == "SHORT" and pat_bias == "BEARISH"):
+                supporting_factors.append(f"Candlestick Pattern: {primary_pat}")
+            elif (direction == "LONG" and pat_bias == "BEARISH") or (direction == "SHORT" and pat_bias == "BULLISH"):
+                conflicting_factors.append(f"Reversal Warning: {primary_pat}")
 
         # Factor Guardrail 5: Mansfield Relative Strength vs NIFTY 50
         stock_chg = 0.0
@@ -530,7 +565,10 @@ class SignalGenerator:
                 "risk_reward": round(rr_ratio, 2),
                 "mtf_confluence": mtf_res.get("confluence_score", 50),
                 "mtf_alignment": mtf_res.get("alignment", "NEUTRAL"),
-                "vix_multiplier": round(vix_multiplier, 2)
+                "vix_multiplier": round(vix_multiplier, 2),
+                "squeeze_status": squeeze_res.get("squeeze_status", "NO_SQUEEZE"),
+                "squeeze_momentum": squeeze_res.get("momentum_value", 0.0),
+                "candlestick_pattern": pattern_res.get("primary_pattern")
             },
             data_freshness_seconds=1.2,
             expiry_time=expiry.isoformat() + "Z"

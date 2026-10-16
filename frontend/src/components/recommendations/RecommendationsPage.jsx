@@ -339,6 +339,21 @@ function RecommendationCard({ rec, index, liveQuote, budget = 1000, onPaperTrade
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-800/40">
                     MTF: {rec.confluence_radar.mtf_alignment?.replace('_', ' ')}
                   </span>
+                  {rec.confluence_radar.squeeze_status === 'SQUEEZE_FIRED_BULLISH' && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      🔥 Squeeze Fired
+                    </span>
+                  )}
+                  {rec.confluence_radar.squeeze_status === 'SQUEEZE_ON' && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                      ⏳ Squeeze Coiling
+                    </span>
+                  )}
+                  {rec.confluence_radar.candlestick_pattern && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      🕯️ {rec.confluence_radar.candlestick_pattern}
+                    </span>
+                  )}
                 </div>
               </div>
 

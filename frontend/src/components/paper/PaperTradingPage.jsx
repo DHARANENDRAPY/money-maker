@@ -386,7 +386,14 @@ export default function PaperTradingPage() {
                   const isWin = pnl >= 0;
                   return (
                     <tr key={idx} className="hover:bg-slate-800/40">
-                      <td className="p-3 font-bold text-white">{t.symbol}</td>
+                      <td className="p-3 font-bold text-white">
+                        <div>{t.symbol}</div>
+                        {t.ai_post_mortem && (
+                          <div className="text-[10px] text-cyan-400/90 font-normal mt-0.5 max-w-sm leading-tight" title={t.ai_post_mortem}>
+                            💡 {t.ai_post_mortem}
+                          </div>
+                        )}
+                      </td>
                       <td className="p-3">{t.trade_type}</td>
                       <td className="p-3">₹{t.entry_price?.toFixed(2)}</td>
                       <td className="p-3">₹{t.exit_price?.toFixed(2)}</td>

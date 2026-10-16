@@ -462,3 +462,187 @@ def calculate_multi_timeframe_confluence(df: pd.DataFrame) -> Dict[str, Any]:
         "detail": detail
     }
 
+
+def calculate_ttm_squeeze(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Computes TTM Squeeze Volatility Momentum.
+    Compares 20-period Bollinger Bands (2.0 std) with 20-period Keltner Channels (1.5 ATR).
+    - When Bollinger Bands are inside Keltner Channels: Volatility Squeeze is ON (energy coiling).
+    - When Bollinger Bands expand outside Keltner Channels: Volatility Squeeze is FIRED (momentum explosion).
+    Histogram measures price displacement from the average of Donchian midline and SMA.
+    """
+    if df.empty or len(df) < 20:
+        return {
+            "squeeze_status": "NO_SQUEEZE",
+            "is_squeeze_on": False,
+            "is_fired": False,
+            "momentum_value": 0.0,
+            "momentum_color": "GRAY",
+            "momentum_direction": "NEUTRAL",
+            "detail": "Insufficient bars for TTM Squeeze calculation."
+        }
+
+    close = df['close']
+    high = df['high']
+    low = df['low']
+
+    # 1. 20-period SMA
+    sma20 = close.rolling(window=20).mean()
+
+    # 2. Bollinger Bands (20, 2.0)
+    std20 = close.rolling(window=20).std()
+    bb_upper = sma20 + 2.0 * std20
+    bb_lower = sma20 - 2.0 * std20
+
+    # 3. Keltner Channels (20, 1.5 ATR)
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr20 = tr.rolling(window=20).mean()
+
+    kc_upper = sma20 + 1.5 * atr20
+    kc_lower = sma20 - 1.5 * atr20
+
+    # Current and previous squeeze conditions
+    squeeze_series = (bb_lower > kc_lower) & (bb_upper < kc_upper)
+    is_squeeze_on = bool(squeeze_series.iloc[-1])
+    was_squeeze_on = bool(squeeze_series.iloc[-2]) if len(squeeze_series) >= 2 else is_squeeze_on
+
+    # 4. Momentum Histogram: Linear displacement
+    highest_20 = high.rolling(window=20).max()
+    lowest_20 = low.rolling(window=20).min()
+    donchian_mid = (highest_20 + lowest_20) / 2.0
+    delta = close - ((donchian_mid + sma20) / 2.0)
+    
+    mom_series = delta.rolling(window=5).mean().fillna(0)
+    curr_mom = float(mom_series.iloc[-1])
+    prev_mom = float(mom_series.iloc[-2]) if len(mom_series) >= 2 else curr_mom
+
+    if is_squeeze_on:
+        status = "SQUEEZE_ON"
+        detail = "⚡ Volatility Squeeze Active (Energy Coiling for Breakout)"
+    elif was_squeeze_on and not is_squeeze_on:
+        if curr_mom > 0:
+            status = "SQUEEZE_FIRED_BULLISH"
+            detail = "🔥 Squeeze Fired Bullish (Explosive Momentum Expansion Up)"
+        else:
+            status = "SQUEEZE_FIRED_BEARISH"
+            detail = "💥 Squeeze Fired Bearish (Explosive Momentum Expansion Down)"
+    else:
+        status = "NO_SQUEEZE"
+        detail = "Normal Volatility Flow"
+
+    # Momentum coloring
+    if curr_mom > 0:
+        mom_color = "LIGHT_GREEN" if curr_mom >= prev_mom else "DARK_GREEN"
+        mom_dir = "BULLISH_EXPANDING" if curr_mom >= prev_mom else "BULLISH_CONTRACTING"
+    else:
+        mom_color = "LIGHT_RED" if curr_mom <= prev_mom else "DARK_RED"
+        mom_dir = "BEARISH_EXPANDING" if curr_mom <= prev_mom else "BEARISH_CONTRACTING"
+
+    return {
+        "squeeze_status": status,
+        "is_squeeze_on": is_squeeze_on,
+        "is_fired": "FIRED" in status,
+        "momentum_value": round(curr_mom, 2),
+        "momentum_color": mom_color,
+        "momentum_direction": mom_dir,
+        "detail": detail
+    }
+
+
+def detect_candlestick_patterns(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Scans the latest 1 to 3 candles for high-probability institutional candlestick patterns:
+    - Bullish / Bearish Engulfing
+    - Hammer Pinbar / Shooting Star Pinbar
+    - Morning Star / Evening Star
+    - Inside Bar Breakout
+    """
+    if df.empty or len(df) < 5:
+        return {
+            "patterns": [],
+            "primary_pattern": None,
+            "bias": "NEUTRAL",
+            "reliability_score": 0,
+            "count": 0
+        }
+
+    c0 = df.iloc[-1]   # Current / latest candle
+    c1 = df.iloc[-2]   # Previous candle
+    c2 = df.iloc[-3] if len(df) >= 3 else c1
+
+    o0, h0, l0, cl0 = float(c0['open']), float(c0['high']), float(c0['low']), float(c0['close'])
+    o1, h1, l1, cl1 = float(c1['open']), float(c1['high']), float(c1['low']), float(c1['close'])
+    o2, h2, l2, cl2 = float(c2['open']), float(c2['high']), float(c2['low']), float(c2['close'])
+
+    range0 = max(0.01, h0 - l0)
+    body0 = abs(cl0 - o0)
+    lower_wick0 = min(o0, cl0) - l0
+    upper_wick0 = h0 - max(o0, cl0)
+
+    patterns = []
+    bullish_weight = 0
+    bearish_weight = 0
+
+    # 1. Bullish Engulfing
+    if cl1 < o1 and cl0 > o0 and cl0 >= o1 and o0 <= cl1 and body0 > (abs(cl1 - o1) * 1.1):
+        patterns.append({"name": "Bullish Engulfing", "type": "BULLISH", "desc": "Strong buyer takeover engulfing previous bear bar."})
+        bullish_weight += 30
+
+    # 2. Bearish Engulfing
+    if cl1 > o1 and cl0 < o0 and cl0 <= o1 and o0 >= cl1 and body0 > (abs(cl1 - o1) * 1.1):
+        patterns.append({"name": "Bearish Engulfing", "type": "BEARISH", "desc": "Aggressive seller takeover engulfing previous bull bar."})
+        bearish_weight += 30
+
+    # 3. Hammer (Bullish Pinbar)
+    if lower_wick0 >= (2.0 * body0) and upper_wick0 <= (0.25 * range0) and cl0 >= l0 + (range0 * 0.65):
+        patterns.append({"name": "Hammer (Bullish Pinbar)", "type": "BULLISH", "desc": "Rejection of lower lows with heavy buyer absorption."})
+        bullish_weight += 25
+
+    # 4. Shooting Star (Bearish Pinbar)
+    if upper_wick0 >= (2.0 * body0) and lower_wick0 <= (0.25 * range0) and cl0 <= l0 + (range0 * 0.35):
+        patterns.append({"name": "Shooting Star (Bearish Pinbar)", "type": "BEARISH", "desc": "Rejection of overhead highs with heavy seller supply."})
+        bearish_weight += 25
+
+    # 5. Morning Star (3-candle bullish reversal)
+    if cl2 < o2 and abs(cl1 - o1) <= (abs(cl2 - o2) * 0.4) and cl0 > o0 and cl0 > (o2 + cl2) / 2.0:
+        patterns.append({"name": "Morning Star", "type": "BULLISH", "desc": "3-bar institutional reversal sequence confirming bottom."})
+        bullish_weight += 35
+
+    # 6. Evening Star (3-candle bearish reversal)
+    if cl2 > o2 and abs(cl1 - o1) <= (abs(cl2 - o2) * 0.4) and cl0 < o0 and cl0 < (o2 + cl2) / 2.0:
+        patterns.append({"name": "Evening Star", "type": "BEARISH", "desc": "3-bar institutional reversal sequence confirming top."})
+        bearish_weight += 35
+
+    # 7. Inside Bar Breakout
+    is_c1_inside = (h1 <= h2) and (l1 >= l2)
+    if is_c1_inside and cl0 > h1:
+        patterns.append({"name": "Inside Bar Bullish Breakout", "type": "BULLISH", "desc": "Coiled range expansion breaking upward."})
+        bullish_weight += 20
+    elif is_c1_inside and cl0 < l1:
+        patterns.append({"name": "Inside Bar Bearish Breakdown", "type": "BEARISH", "desc": "Coiled range expansion breaking downward."})
+        bearish_weight += 20
+
+    if bullish_weight > bearish_weight:
+        overall_bias = "BULLISH"
+        score = min(100, bullish_weight)
+    elif bearish_weight > bullish_weight:
+        overall_bias = "BEARISH"
+        score = min(100, bearish_weight)
+    else:
+        overall_bias = "NEUTRAL"
+        score = 0
+
+    primary = patterns[0]["name"] if patterns else None
+
+    return {
+        "patterns": patterns,
+        "primary_pattern": primary,
+        "bias": overall_bias,
+        "reliability_score": score,
+        "count": len(patterns)
+    }
+
+

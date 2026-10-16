@@ -371,6 +371,21 @@ export async function fetchPcrSentiment() {
   return res.json();
 }
 
+// --- Parameter Optimization & Tuner API ---
+export async function optimizeBacktestParameters(payload) {
+  const res = await fetch(`${BASE_URL}/backtest/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Optimization failed: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+
 
 
 
