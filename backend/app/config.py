@@ -20,11 +20,11 @@ class Settings(BaseSettings):
     DATA_PROVIDER: str = "angel_one"
     DEMO_MODE: bool = False
     
-    # Angel One SmartAPI Credentials (empty by default, configured via UI or .env)
-    ANGEL_API_KEY: str = ""
-    ANGEL_CLIENT_CODE: str = ""
-    ANGEL_PIN: str = ""
-    ANGEL_TOTP_SECRET: str = ""
+    # Angel One SmartAPI Credentials (Permanent personal setup)
+    ANGEL_API_KEY: str = "Y4bQd59O"
+    ANGEL_CLIENT_CODE: str = "AAAR926517"
+    ANGEL_PIN: str = "9901"
+    ANGEL_TOTP_SECRET: str = "JNL25N7OIZOC7UX3CFDDLNSSF4"
     ANGEL_FEED_TOKEN: str = ""
     ANGEL_AUTH_TOKEN: str = ""
     
@@ -48,10 +48,10 @@ class Settings(BaseSettings):
     # ML Models path
     MODEL_DIR: str = "./ml_models"
 
-    # Telegram Notifications
-    TELEGRAM_BOT_TOKEN: str = ""
-    TELEGRAM_CHAT_ID: str = ""
-    TELEGRAM_ENABLED: bool = False
+    # Telegram Notifications (Permanent personal setup)
+    TELEGRAM_BOT_TOKEN: str = "8896336261:AAGumewkCsZObCn1GVcqlbiWvqxUqMZmiHs"
+    TELEGRAM_CHAT_ID: str = "1779681568"
+    TELEGRAM_ENABLED: bool = True
 
     class Config:
         env_file = (".env", "../.env")

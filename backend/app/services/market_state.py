@@ -143,12 +143,21 @@ class MarketStateManager:
     def switch_provider(self, provider_name: str, config: Optional[Dict[str, Any]] = None):
         """Authenticates and connects Angel One SmartAPI live broker feed."""
         if config:
+            api_key = (config.get("api_key") or getattr(self.angel_provider, "api_key", "") or settings.ANGEL_API_KEY).strip()
+            client_code = (config.get("client_code") or getattr(self.angel_provider, "client_code", "") or settings.ANGEL_CLIENT_CODE).strip().upper()
+            pin = (config.get("pin") or getattr(self.angel_provider, "pin", "") or settings.ANGEL_PIN).strip()
+            totp_secret = (config.get("totp_secret") or getattr(self.angel_provider, "totp_secret", "") or settings.ANGEL_TOTP_SECRET).strip()
+            
             self.angel_provider = AngelOneSmartAPIProvider(
-                api_key=config.get("api_key", ""),
-                client_code=config.get("client_code", ""),
-                pin=config.get("pin", ""),
-                totp_secret=config.get("totp_secret", "")
+                api_key=api_key,
+                client_code=client_code,
+                pin=pin,
+                totp_secret=totp_secret
             )
+            settings.ANGEL_API_KEY = api_key
+            settings.ANGEL_CLIENT_CODE = client_code
+            settings.ANGEL_PIN = pin
+            settings.ANGEL_TOTP_SECRET = totp_secret
         res = self.angel_provider.authenticate()
         if res.get("success"):
             self.active_provider = self.angel_provider

@@ -27,7 +27,7 @@ import {
   MessageSquare,
   Bell
 } from 'lucide-react';
-import { fetchSettings, updateProviderSettings, fetchTelegramStatus, updateTelegramConfig, sendTestTelegramAlert } from '../../services/api';
+import { fetchSettings, updateProviderSettings, testAngelConnection, fetchTelegramStatus, updateTelegramConfig, sendTestTelegramAlert } from '../../services/api';
 import { useMarket } from '../../context/MarketContext';
 
 const SETUP_STEPS = [
@@ -76,6 +76,8 @@ export default function SettingsPage() {
   const [showTotp, setShowTotp] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
+  const [isTestingAngel, setIsTestingAngel] = useState(false);
 
   // Telegram Notifications State
   const [telegramToken, setTelegramToken] = useState('');
@@ -95,6 +97,7 @@ export default function SettingsPage() {
         setProvider('angel_one');
         setClientCode(data.angel_client_code || '');
         setIsAuthenticated(data.angel_authenticated || false);
+        setHasSavedCredentials(data.has_credentials || false);
         if (tg) {
           setTelegramStatus(tg);
           setTelegramEnabled(tg.enabled ?? true);
@@ -106,6 +109,28 @@ export default function SettingsPage() {
     };
     loadConfig();
   }, []);
+
+  const handleTestAngel = async () => {
+    setIsTestingAngel(true);
+    setStatusMsg(null);
+    try {
+      const res = await testAngelConnection();
+      if (res.success) {
+        setIsAuthenticated(true);
+        setStatusMsg({ type: 'success', text: res.message || 'Angel One connection test passed!' });
+        showToast('✅ Angel One SmartAPI connection verified!', 'success');
+        refreshOverview();
+      } else {
+        setIsAuthenticated(false);
+        setStatusMsg({ type: 'error', text: res.error || 'Connection failed.' });
+        showToast(`Angel One Error: ${res.error || 'Connection failed'}`, 'error');
+      }
+    } catch (err) {
+      showToast('Network error testing Angel One: ' + err.message, 'error');
+    } finally {
+      setIsTestingAngel(false);
+    }
+  };
 
   const handleSaveTelegram = async (e) => {
     e.preventDefault();
@@ -261,8 +286,8 @@ export default function SettingsPage() {
         </div>
 
         {/* Angel One Connection Card */}
-        <div className="p-4 rounded-xl border bg-slate-950/60 border-slate-800">
-          <div className="flex items-center justify-between mb-2">
+        <div className="p-4 rounded-xl border bg-slate-950/60 border-slate-800 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center space-x-2">
               <Key className="w-4 h-4 text-cyan-400" />
               <span className="text-xs font-bold text-white">Angel One SmartAPI (Live Broker Feed)</span>
@@ -271,16 +296,33 @@ export default function SettingsPage() {
                   ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60' 
                   : 'bg-rose-900/60 text-rose-300 border border-rose-700/60'
               }`}>
-                {isAuthenticated ? 'AUTHENTICATED' : 'NOT CONNECTED'}
+                {isAuthenticated ? 'AUTHENTICATED (LIVE)' : 'NOT CONNECTED'}
               </span>
             </div>
-            {isAuthenticated && (
-              <span className="text-xs text-slate-400 font-mono">Client: {clientCode}</span>
-            )}
+            <div className="flex items-center gap-2">
+              {clientCode && (
+                <span className="text-xs text-slate-400 font-mono">Client: {clientCode}</span>
+              )}
+              <button
+                type="button"
+                onClick={handleTestAngel}
+                disabled={isTestingAngel}
+                className="px-3 py-1 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/40 border border-cyan-500/30 text-cyan-300 font-semibold text-[11px] flex items-center gap-1.5 transition-all disabled:opacity-50"
+              >
+                {isTestingAngel ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 text-cyan-400" />}
+                {isTestingAngel ? 'Testing...' : 'Test Connection'}
+              </button>
+            </div>
           </div>
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            All prices, signals, and automated trades stream exclusively from your real Angel One brokerage account for genuine NSE market data.
+            All prices, signals, and automated trades stream directly from your Angel One SmartAPI account for real-time NSE market depth.
           </p>
+          {hasSavedCredentials && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-700/40 text-[11px] text-emerald-300">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span><strong>Permanent Credentials Active:</strong> Stored securely in your environment config. Zero daily manual entry needed.</span>
+            </div>
+          )}
         </div>
 
         {/* Angel One Credentials Form */}
@@ -345,7 +387,7 @@ export default function SettingsPage() {
                 label="SmartAPI Key"
                 value={apiKey}
                 onChange={e => setApiKey(e.target.value)}
-                placeholder="e.g. aB3xK9..."
+                placeholder={hasSavedCredentials ? "Configured in backend (Permanent Setup)" : "e.g. aB3xK9..."}
               />
               <FieldInput
                 label="Client Code (Login ID)"
@@ -360,7 +402,7 @@ export default function SettingsPage() {
                 showToggle={true}
                 isShown={showPin}
                 onToggle={() => setShowPin(v => !v)}
-                placeholder="4–6 digit PIN"
+                placeholder={hasSavedCredentials ? "Configured in backend (Permanent Setup)" : "4–6 digit PIN"}
               />
               <FieldInput
                 label="TOTP Secret (Base32)"
@@ -369,7 +411,7 @@ export default function SettingsPage() {
                 showToggle={true}
                 isShown={showTotp}
                 onToggle={() => setShowTotp(v => !v)}
-                placeholder="16–32 char secret, e.g. JBSWY3DP..."
+                placeholder={hasSavedCredentials ? "Configured in backend (Permanent Setup)" : "16–32 char secret, e.g. JBSWY3DP..."}
               />
             </div>
 
@@ -392,19 +434,30 @@ export default function SettingsPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
               <div className="flex items-center space-x-1.5 text-[11px] text-slate-400">
                 <Lock className="w-3.5 h-3.5 text-slate-500" />
-                <span>Credentials stored in server session memory only. Never transmitted externally.</span>
+                <span>Credentials stored securely in permanent backend config.</span>
               </div>
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs flex items-center gap-2 transition-all shadow-lg shadow-cyan-600/20 disabled:opacity-60 shrink-0"
-              >
-                {isSaving ? (
-                  <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Connecting...</>
-                ) : (
-                  <><Zap className="w-3.5 h-3.5" /> Connect & Authenticate</>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestAngel}
+                  disabled={isTestingAngel || isSaving}
+                  className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+                >
+                  {isTestingAngel ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-cyan-400" />}
+                  Test Connection
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving || isTestingAngel}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs flex items-center gap-2 transition-all shadow-lg shadow-cyan-600/20 disabled:opacity-60 shrink-0"
+                >
+                  {isSaving ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Connecting...</>
+                  ) : (
+                    <><RefreshCw className="w-3.5 h-3.5" /> Reconnect Now</>
+                  )}
+                </button>
+              </div>
             </div>
           </form>
       </div>

@@ -323,6 +323,14 @@ def add_journal_entry(entry: TradeJournalCreate, db: Session = Depends(get_db)):
 def get_settings():
     from app.services.telegram_service import telegram_service
     provider = market_state.active_provider
+    if hasattr(provider, "ensure_authenticated"):
+        provider.ensure_authenticated()
+
+    angel = market_state.angel_provider
+    has_creds = bool(
+        angel and getattr(angel, "api_key", None) and getattr(angel, "client_code", None) and 
+        getattr(angel, "pin", None) and getattr(angel, "totp_secret", None)
+    )
     return {
         "active_provider": market_state.active_provider_name,
         "is_live_feed": provider.is_live_feed(),
@@ -330,15 +338,25 @@ def get_settings():
         "watchlist": list(market_state.watchlist),
         "default_capital": 100000.0,
         "default_risk_pct": 1.0,
-        "angel_client_code": market_state.angel_provider.client_code if market_state.angel_provider else "",
-        "angel_authenticated": market_state.angel_provider.is_authenticated if market_state.angel_provider else False,
+        "angel_client_code": angel.client_code if angel else "",
+        "angel_api_key_configured": bool(angel and angel.api_key),
+        "angel_authenticated": angel.is_authenticated if angel else False,
+        "has_credentials": has_creds,
         "telegram": telegram_service.get_status()
     }
+
+@router.post("/settings/test-angel")
+def test_angel_connection():
+    angel = market_state.angel_provider
+    if not angel:
+        return {"success": False, "error": "Angel One provider not initialized."}
+    res = angel.authenticate()
+    return res
 
 @router.post("/settings/provider")
 def update_provider_settings(req: SettingsUpdateRequest):
     res = market_state.switch_provider(
-        provider_name=req.data_provider or "demo",
+        provider_name=req.data_provider or "angel_one",
         config={
             "api_key": req.angel_api_key,
             "client_code": req.angel_client_code,

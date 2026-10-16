@@ -16,3 +16,21 @@ services:
         value: production
       - key: DEBUG
         value: "false"
+      - key: DATA_PROVIDER
+        value: "angel_one"
+      - key: DEMO_MODE
+        value: "false"
+      - key: ANGEL_API_KEY
+        value: "Y4bQd59O"
+      - key: ANGEL_CLIENT_CODE
+        value: "AAAR926517"
+      - key: ANGEL_PIN
+        value: "9901"
+      - key: ANGEL_TOTP_SECRET
+        value: "JNL25N7OIZOC7UX3CFDDLNSSF4"
+      - key: TELEGRAM_BOT_TOKEN
+        value: "8896336261:AAGumewkCsZObCn1GVcqlbiWvqxUqMZmiHs"
+      - key: TELEGRAM_CHAT_ID
+        value: "1779681568"
+      - key: TELEGRAM_ENABLED
+        value: "true"

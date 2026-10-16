@@ -128,6 +128,14 @@ export async function updateProviderSettings(payload) {
   return res.json();
 }
 
+export async function testAngelConnection() {
+  const res = await fetch(`${BASE_URL}/settings/test-angel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return res.json();
+}
+
 export async function toggleWatchlist(symbol) {
   const res = await fetch(`${BASE_URL}/watchlist/toggle?symbol=${symbol}`, { method: 'POST' });
   return res.json();
